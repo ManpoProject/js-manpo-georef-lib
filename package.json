@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "JavaScript Library for the georeferencing functions",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "node test-georeflib.js && exit 1"
   },
@@ -29,6 +30,8 @@
     "mathjs": "^11.10.0"
   },
   "devDependencies": {
-    "esmify": "^2.1.1"
+    "browser-resolve": "^2.0.0",
+    "esmify": "^2.1.1",
+    "node-fetch": "^3.3.2"
   }
 }

@@ -2,11 +2,11 @@ import GeographicLib from 'geographiclib'
 import Delaunator from 'delaunator'
 import lodash from 'lodash'
 import * as mathjs from 'mathjs'
-import { Enum } from 'enumify'
+import { Enumify } from 'enumify'
 
 const geodesic = GeographicLib.Geodesic.WGS84
 
-export class Crs extends Enum {
+export class Crs extends Enumify {
   static Geographic = new Crs()
   static Simple = new Crs()
 }
@@ -185,6 +185,22 @@ export class GeometryLib {
       res.push(this.pointInCoordsByIndex(p, tin.coords))
     })
     return res
+  }
+
+  /**
+   * @summary convert the array of coordinates [x1, y1, x2, y2, ...] to array of points [[x1, y1], [x2, y2], ...]
+   * @param {number[]} coords [x1, y1, x2, y2, ...]
+   * @returns {number[][]} [[x1, y1], [x2, y2], ...]
+   */
+  static coordsToPoints(coords) {
+    if (coords === undefined || coords === null) {
+      return []
+    }
+    let pts = []
+    for (let i = 0; i < coords.length - 1; i += 2) {
+      pts.push([coords[i], coords[i + 1]])
+    }
+    return pts
   }
 
   /**
@@ -733,15 +749,15 @@ export class PointGeoreferencer {
 
     this.georefTIN1 = GeometryLib.generateTIN(this.ctrlPts1)
     this.georefTIN1Vetices = GeometryLib.pointsInTIN(this.georefTIN1)
-    this.georefTIN1Triangles = trianglesInTIN(this.georefTIN1)
+    this.georefTIN1Triangles = GeometryLib.trianglesInTIN(this.georefTIN1)
     this.tin1AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN1, this.ctrlPts2)
     this.georefTriangles1 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts1, this.ctrlPts2)
     this.triangles1AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles1, this.ctrlPts1, this.ctrlPts2)
   
     this.georefTIN2 = GeometryLib.generateTIN(this.ctrlPts2)
     this.georefTIN2Vetices = GeometryLib.pointsInTIN(this.georefTIN2)
-    this.georefTIN2Triangles = trianglesInTIN(this.georefTIN2)
-    this.georefTIN2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1)
+    this.georefTIN2Triangles = GeometryLib.trianglesInTIN(this.georefTIN2)
+    this.tin2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1)
     this.georefTriangles2 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts2, this.ctrlPts1)
     this.triangles2AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles2, this.ctrlPts2, this.ctrlPts1)
   
@@ -806,7 +822,7 @@ export class PointGeoreferencer {
       })
       return res
     }
-    const triIdx = GeometryLib.triangleIndexContainsPoint(this.georefTIN1Triangles, this.georefTIN1Vetices, pt)
+    let triIdx = GeometryLib.triangleIndexContainsPoint(this.georefTIN1Triangles, this.georefTIN1Vetices, pt)
     if (triIdx === null) triIdx = GeometryLib.nearestTriangleIndex(pt, this.georefTIN1Triangles, this.georefTIN1Vetices)
     if (triIdx === null) {
       if (handle_exception) {
@@ -846,7 +862,7 @@ export class PointGeoreferencer {
       })
       return res
     }
-    const triIdx = GeometryLib.triangleIndexContainsPoint(this.georefTIN2Triangles, this.georefTIN2Vetices, pt)
+    let triIdx = GeometryLib.triangleIndexContainsPoint(this.georefTIN2Triangles, this.georefTIN2Vetices, pt)
     if (triIdx === null) triIdx = GeometryLib.nearestTriangleIndex(pt, this.georefTIN2Triangles, this.georefTIN2Vetices)
     if (triIdx === null) {
       if (handle_exception) {
