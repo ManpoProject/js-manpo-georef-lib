@@ -37,6 +37,21 @@ export class GeometryLib {
   }
 
   /**
+   * @summary Calculate the distance of two 2D points
+   * @param {number[]} p1 1st point, [x1, y1]
+   * @param {number[]} p2 2nd point, [x2, y2]
+   * @param {Crs} crs the coordinate system of the points
+   * @returns {number} distance
+   */
+  static distance(p1, p2, crs) {
+    if (crs === Crs.Geographic) {
+      return this.geoDistance(p1, p2)
+    } else {
+      return this.simpleDistance(p1, p2)
+    }
+  }
+
+  /**
    * @summary Calculate the centroid of a triangle
    * @param {number[][]} points three points of the triangle, in the form [[x1, y1], [x2, y2], [x3, y3]]
    * @returns {number[]} the centroid point [x, y]
@@ -51,13 +66,20 @@ export class GeometryLib {
    * @summary Calculate the distances from the point (p) to each of the points in (pts), then sort them in ascending order
    * @param {number[]} p the point [x, y]
    * @param {number[][]} pts the points [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs the coordinate system of the points
    * @returns {number[][]} array of the sorted distances with the index of the corresponded point, [[idx1, dist1], [idx2, dist2], ...]
    */
-  static sortGeoDistance(p, pts) {
+  static sortDistance(p, pts, crs) {
     let distArr = []
-    pts.forEach((pt, idx) => {
-      distArr.push([idx, this.geoDistance(p, pt)])
-    })
+    if (crs === Crs.Geographic) {
+      pts.forEach((pt, idx) => {
+        distArr.push([idx, this.geoDistance(p, pt)])
+      })
+    } else {
+      pts.forEach((pt, idx) => {
+        distArr.push([idx, this.simpleDistance(p, pt)])
+      })
+    }
     distArr.sort((a, b) => {
       return a[1] - b[1]
     })
@@ -65,36 +87,38 @@ export class GeometryLib {
   }
 
   /**
-   * @summary Find the nearest geo point in (pts) to the point (p)
-   * @param {number[]} p the point [lon, lat]
-   * @param {number[][]} pts the points [[lon1, lat1], [lon2, lat2], ...]
+   * @summary Find the nearest point in (pts) to the point (p)
+   * @param {number[]} p the point like [lon, lat] or [x, y]
+   * @param {number[][]} pts the points like [[lon1, lat1], [lon2, lat2], ...] or [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs the coordinate system of the points
    * @returns {Array} the nearest point [nearestPointIndex, [nearest_lon, nearest_lat]]
    */
-  static nearestGeoPoint(p, pts) {
+  static nearestPoint(p, pts, crs) {
     if (pts === undefined || pts === null) {
       return [-1, null]
     }
     if (pts.length === 1) {
       return [0, pts[0]]
     }
-    const distArr = this.sortGeoDistance(p, pts)
+    const distArr = this.sortDistance(p, pts, crs)
     return [distArr[0][0], pts[distArr[0][0]]]
   }
 
   /**
-   * @summary Find the nearest two geo points in (pts) to the point (p)
-   * @param {number[]} p the point [lon, lat]
-   * @param {number[][]} pts the points [[lon1, lat1], [lon2, lat2], ...]
+   * @summary Find the nearest two points in (pts) to the point (p)
+   * @param {number[]} p the point like [lon, lat] or [x, y]
+   * @param {number[][]} pts the points like [[lon1, lat1], [lon2, lat2], ...] or [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs the coordinate system of the points
    * @returns {Array} the nearest two point [nearestIndex, 2nd_nearestIndex, [nearest_lon, nearest_lat], [2nd_nearest_lon, 2nd_nearest_lat]]
    */
-  static nearestTwoGeoPoints(p, pts) {
+  static nearestTwoPoints(p, pts, crs) {
     if (pts === undefined || pts === null) {
       return [-1, -1, null, null]
     }
     if (pts.length === 1) {
       return [0, -1, pts[0], null]
     }
-    const distArr = this.sortGeoDistance(p, pts)
+    const distArr = this.sortDistance(p, pts, crs)
     return [
       distArr[0][0],
       distArr[1][0],
@@ -104,9 +128,10 @@ export class GeometryLib {
   }
 
   /**
-   * @summary Find the nearest three geo points in (pts) to the point (p)
-   * @param {number[]} p the point [lon, lat]
-   * @param {number[][]} pts the points [[lon1, lat1], [lon2, lat2], ...]
+   * @summary Find the nearest three points in (pts) to the point (p)
+   * @param {number[]} p the point [lon, lat] or [x, y]
+   * @param {number[][]} pts the points [[lon1, lat1], [lon2, lat2], ...] or [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs the coordinate system of the points
    * @returns {Array} the nearest three points
    * [nearestIndex, 
    * 2nd_nearestIndex, 
@@ -115,14 +140,14 @@ export class GeometryLib {
    * [2nd_nearest_lon, 2nd_nearest_lat],
    * [3rd_nearest_lon, 3rd_nearest_lat]]
    */
-  static nearestThreeGeoPoints(p, pts) {
+  static nearestThreePoints(p, pts, crs) {
     if (pts === undefined || pts === null) {
       return [-1, -1, -1, null, null, null]
     }
     if (pts.length === 1) {
       return [0, -1, -1, pts[0], null, null]
     }
-    const distArr = this.sortGeoDistance(p, pts)
+    const distArr = this.sortDistance(p, pts, crs)
     if (pts.length === 2) {
       return [
         distArr[0][0],
@@ -144,16 +169,17 @@ export class GeometryLib {
   }
 
   /**
-   * @summary The fastest two geo points among an array of points
-   * @param {number[][]} pts points [[lon1, lat1], [lon2, lat2], ...]
+   * @summary The fastest two points among an array of points
+   * @param {number[][]} pts points like [[lon1, lat1], [lon2, lat2], ...] or [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs the coordinate system of the points
    * @returns {number[]} [idx1, idx2] the indices of the two points in the original array
    */
-  static farthestTwoGeoPoints(pts) {
+  static farthestTwoPoints(pts, crs) {
     const count = pts.length
     let max_dist = -1, idx1 = -1, idx2 = -1
     for (let i = 0; i < count - 1; i++) {
       for (let j = i + 1; j < count; j++) {
-        const dist = this.geoDistance(pts[i], pts[j])
+        const dist = (crs === Crs.Geographic)? this.geoDistance(pts[i], pts[j]) : this.simpleDistance(pts[i], pts[j])
         if (dist > max_dist) {
           max_dist = dist
           idx1 = i
@@ -243,18 +269,25 @@ export class GeometryLib {
    * @summary find the nearest triangle (whose centroid is the nearest) in the TIN to a point
    * @param {number[]} p [x, y] or [lon, lat]
    * @param {Delaunator} tin a Delaunator object of the TIN
+   * @param {Crs} crs the coordinate system of the points
    * @returns {number} the index of the triangle in the triangles' list of the TIN
    */
-  static nearestTriangleInTIN(p, tin) {
+  static nearestTriangleInTIN(p, tin, crs) {
     // 1. find the nearest point in TIN
-    const [nearest_index, nearest_point] = this.nearestGeoPoint(p, this.pointsInTIN(tin))
+    const [nearest_index, nearest_point] = this.nearestPoint(p, this.pointsInTIN(tin), crs)
     // 2. get the triangles related to the point
     let tri = this.trianglesIncludeVertexIndexInTIN(nearest_index, tin)
     // 3. calculate the center of the triangles
     let dists = []
-    tri.forEach((t) => {
-      dists.push([t, this.geoDistance(p, this.triangleCentroid(this.trianglePointsInTIN(t, tin)))])
-    })
+    if (crs === Crs.Geographic) {
+      tri.forEach((t) => {
+        dists.push([t, this.geoDistance(p, this.triangleCentroid(this.trianglePointsInTIN(t, tin)))])
+      })
+    } else {
+      tri.forEach((t) => {
+        dists.push([t, this.simpleDistance(p, this.triangleCentroid(this.trianglePointsInTIN(t, tin)))])
+      })
+    }
     // 4. find the nearest centroid
     dists.sort((a, b) => {
       return a[1] - b[1]
@@ -267,19 +300,27 @@ export class GeometryLib {
    * @param {number[]} p the point [x, y] or [lon, lat]
    * @param {number[][]} triangles indices of vertices of each triangle
    * @param {number[][]} vertices coordinates of vertices
+   * @param {Crs} crs the coordinate system of the points
    * @returns {number} the index of the triangle in the triangles' list
    */
-  static nearestTriangleIndex(p, triangles, vertices) {
+  static nearestTriangleIndex(p, triangles, vertices, crs) {
     // 1. find the nearest point in TIN
-    const [nearest_index, nearest_point] = this.nearestGeoPoint(p, vertices)
+    const [nearest_index, nearest_point] = this.nearestPoint(p, vertices, crs)
     // 2. get the triangles related to the point
     let tri = this.trianglesIncludeVertexIndex(nearest_index, triangles)
     // 3. calculate the center of the triangles
     let dists = []
-    tri.forEach((t) => {
-      const triVertices = [vertices[t[1][0]], vertices[t[1][1]], vertices[t[1][2]]]
-      dists.push([t[0], this.geoDistance(p, this.triangleCentroid(triVertices))])
-    })
+    if (crs === Crs.Geographic) {
+      tri.forEach((t) => {
+        const triVertices = [vertices[t[1][0]], vertices[t[1][1]], vertices[t[1][2]]]
+        dists.push([t[0], this.geoDistance(p, this.triangleCentroid(triVertices))])
+      })
+    } else {
+      tri.forEach((t) => {
+        const triVertices = [vertices[t[1][0]], vertices[t[1][1]], vertices[t[1][2]]]
+        dists.push([t[0], this.simpleDistance(p, this.triangleCentroid(triVertices))])
+      })
+    }
     // 4. find the nearest centroid
     dists.sort((a, b) => {
       return a[1] - b[1]
@@ -322,6 +363,18 @@ export class GeometryLib {
   }
 
   /**
+   * @summary Calculate the distance from a point to a line segment in 2D coordinates
+   * @param {number[]} p the point [x, y]
+   * @param {number[]} p1 1st point of the segment [x1, y1]
+   * @param {number[]} p2 2nd point of the segment [x2, y2]
+   * @returns {number[]} the distance and the nearest point on the segment [dist, pm]
+   */
+    static simpleDistancePointToSegment(p, p1, p2) {
+      const nearest = this.nearestPointOnSegment(p, p1, p2)
+      return [this.simpleDistance(p, nearest), nearest]
+    }
+
+  /**
    * @summary Find the nearest point on a line segment from a point in 2D coordinates
    * @param {number[]} p the point [x, y]
    * @param {number[]} p1 1st point of the segment [x1, y1]
@@ -343,14 +396,15 @@ export class GeometryLib {
   }
 
   /**
-   * @summary Calculate the distance from a point to a polyline in geographic coordinates
-   * @param {number[]} p the point [lon, lat]
-   * @param {number[][]} l the polyline [[lon1, lat1], [lon2, lat2], ...]
+   * @summary Calculate the distance from a point to a polyline
+   * @param {number[]} p the point [lon, lat] or [x, y]
+   * @param {number[][]} l the polyline [[lon1, lat1], [lon2, lat2], ...] or [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs the coordinate system of the points
    * @returns {Array} the distance, the nearest point and the segment index 
    * [dist, [nearest_x, nearest_y], segment_index]
    * @throws an error if the parameters are illegal
    */
-  static geoDistancePointToLinestringArc(p, l) {
+  static distancePointToLinestring(p, l, crs) {
     if (p === undefined || p === null || p.length < 2) {
       throw new Error("Not a legal point")
     }
@@ -358,8 +412,14 @@ export class GeometryLib {
       throw new Error("Not a legal line")
     }
     let distArr = []
-    for (let i = 0; i < l.length - 1; i++) {
-      distArr.push([i, this.geoDistancePointToSegmentArc(p, l[i], l[i + 1])])
+    if (crs === Crs.Geographic) {
+      for (let i = 0; i < l.length - 1; i++) {
+        distArr.push([i, this.geoDistancePointToSegmentArc(p, l[i], l[i + 1])])
+      }
+    } else {
+      for (let i = 0; i < l.length - 1; i++) {
+        distArr.push([i, this.simpleDistancePointToSegment(p, l[i], l[i + 1])])
+      }
     }
     distArr.sort((a, b) => {
       return a[1][0] - b[1][0]
@@ -396,18 +456,20 @@ export class GeometryLib {
   /**
    * @summary Find the linear referenced point on a 2D polyline corresponded to a geo point against a geo polyline within a given buffer range
    * @param {number[]} p geo point [lon, lat]
-   * @param {number[][]} gl geo polyline [[lon1, lat1], [lon2, lat2], ...]
-   * @param {number[][]} ml simple (2D) polyline [[x1, y1], [x2, y2], ...]
+   * @param {number[][]} polyline1 1st polyline, such as [[lon1, lat1], [lon2, lat2], ...]
+   * @param {number[][]} polyline2 2nd polyline, such as [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs1 the coordinate system of polyline1
+   * @param {Crs} crs2 the coordinate system of polyline2
    * @param {number} bf buffer range (in meters)
    * @returns {Array} the referenced point and the geo distance from the point to the polyline, [[x, y], dist]
    */
-  static linearRefPointOnLinestring(p, gl, ml, bf) {
-    const [dist, pm, segIdx] = this.geoDistancePointToLinestringArc(p, gl)
+  static linearRefPointOnLinestring(p, polyline1, polyline2, crs1, crs2, bf) {
+    const [dist, pm, segIdx] = this.distancePointToLinestring(p, polyline1, crs1)
     if (dist > bf) {
       return [null, Infinity]
     }
-    const prop = this.propOfGeoPointOnLinestring(pm, gl, segIdx)
-    return [this.pointOfPropOnLinestring(prop, ml), dist]
+    const prop = this.propOfPointOnLinestring(pm, polyline1, segIdx, crs1)
+    return [this.pointOfPropOnLinestring(prop, polyline2, crs2), dist]
   }
 
   /**
@@ -415,11 +477,12 @@ export class GeometryLib {
    * @param {number[]} p the point [lon, lat]
    * @param {number[][]} l the polyline [[lon1, lat1], [lon2, lat2], ...]
    * @param {number} segIdx the index of the segment that the point is on
+   * @param {Crs} crs the coordinate system of the points
    * @returns {number} the proportion in the range [0, 1]
    */
-  static propOfGeoPointOnLinestring(p, l, segIdx) {
-    const segLens = this.segmentLengthsOfGeoLinestring(l)
-    const refLen = lodash.sum(segLens.slice(0, segIdx)) + this.geoDistance(l[segIdx], p)
+  static propOfPointOnLinestring(p, l, segIdx, crs) {
+    const segLens = (crs === Crs.Geographic)? this.segmentLengthsOfGeoLinestring(l): this.segmentLengthsOfSimpleLinestring(l)
+    const refLen = lodash.sum(segLens.slice(0, segIdx)) + this.distance(l[segIdx], p, crs)
     return refLen / lodash.sum(segLens)
   }
 
@@ -429,7 +492,7 @@ export class GeometryLib {
    * @param {number[][]} l the polyline [[x1, y1], [x2, y2], ...]
    * @returns {number[]} the point [x, y]
    */
-  static pointOfPropOnLinestring(prop, l) {
+  static pointOfPropOnSimpleLinestring(prop, l) {
     if (prop <= 0) {
       return l[0]
     }
@@ -451,6 +514,51 @@ export class GeometryLib {
       }
     }
     return l[l.length - 1]
+  }
+
+  /**
+   * @summary Find the point on the polyline of a certain length proportion in geographic coordinates
+   * @param {number} prop the proportion in the range [0, 1]
+   * @param {number[][]} l the polyline [[lon1, lat1], [lon2, lat2], ...]
+   * @returns {number[]} the point [lon, lat]
+   */
+  static pointOfPropOnGeoLinestring(prop, l) {
+    if (prop <= 0) {
+      return l[0]
+    }
+    if (prop >= 1) {
+      return l[l.length - 1]
+    }
+    const segLens = this.segmentLengthsOfGeoLinestring(l)
+    const sumLen = lodash.sum(segLens)
+    const refLen = sumLen * prop
+    let currentLen = 0
+    for (let i = 0; i < segLens.length; i++) {
+      currentLen += segLens[i]
+      if (currentLen > refLen) {
+        const d = currentLen - refLen
+        const r = d / segLens[i]
+        const inv =  geodesic.Inverse(l[i][1], l[i][0], l[i + 1][1], l[i + 1][0])
+        const direct = geodesic.Direct(l[i][1], l[i][0], inv.azi1, inv.s12 * r)
+        return [direct.lon2, direct.lat2]
+      }
+    }
+    return l[l.length - 1]
+  }
+
+  /**
+   * @summary Find the point on the polyline of a certain length proportion in geographic coordinates
+   * @param {number} prop the proportion in the range [0, 1]
+   * @param {number[][]} l the polyline [[lon1, lat1], [lon2, lat2], ...] or [[x1, y1], [x2, y2], ...]
+   * @param {Crs} crs the coordinate system of the points
+   * @returns {number[]} the point [lon, lat] or [x, y]
+   */
+  static pointOfPropOnLinestring(prop, l, crs) {
+    if (crs === Crs.Geographic) {
+      return this.pointOfPropOnGeoLinestring(prop, l)
+    } else {
+      return this.pointOfPropOnSimpleLinestring(prop, l)
+    }
   }
 
   /**
@@ -544,24 +652,24 @@ export class GeometryLib {
 
   /**
    * @summary Calculate the corresponded point to a segment with similarity transform from a point and a segment in another coordinate system
-   * @param {number[]} p the point [lon, lat]
-   * @param {number[][]} geoSeg the segment [[lon1, lat1], [lon2, lat2]]
-   * @param {number[][]} simpleSeg the segment [[x1, y1], [x2, y2]]
+   * @param {number[]} p the point, like [lon, lat]
+   * @param {number[][]} seg1 the segment, like [[lon1, lat1], [lon2, lat2]]
+   * @param {number[][]} seg2 the segment, like [[x1, y1], [x2, y2]]
    * @returns {number[]} transformed point [x, y]
    */
-  static getSimilarPoint(p, geoSeg, simpleSeg) {
-    const v1 = mathjs.subtract(geoSeg[1], geoSeg[0])
-    const v2 = mathjs.subtract(p, geoSeg[0])
+  static getSimilarPoint(p, seg1, seg2) {
+    const v1 = mathjs.subtract(seg1[1], seg1[0])
+    const v2 = mathjs.subtract(p, seg1[0])
     const norm1 = mathjs.norm(v1), norm2 = mathjs.norm(v2)
     if (mathjs.abs(norm1) < 1e-10) {
       throw new Error('The two geo-ref points are the same')
     }
     if (mathjs.abs(norm2) < 1e-10) {
-      return simpleSeg[0]
+      return seg2[0]
     }
     const dot = mathjs.dot(v1, v2), cross = mathjs.cross(v1, v2)
     const cos = dot / norm1 / norm2, sin = cross / norm1 / norm2
-    return rotateSegmentWithMatrix(simpleSeg,  [[cos, -sin], [sin, cos]])
+    return rotateSegmentWithMatrix(seg2,  [[cos, -sin], [sin, cos]])
   }
 
   /**
@@ -615,14 +723,22 @@ export class GeometryLib {
    * @param {number[][]} triangles indices of vertices of each triangle
    * @param {number[][]} points coordinates of control points
    * @param {number[]} p the point to be transformed
+   * @param {Crs} crs the coordinate system of the points
    * @returns {number} the index of the triangle to be used for transformation
    */
-  static georefTriangleForPoint(triangles, points, p) {
+  static georefTriangleForPoint(triangles, points, p, crs) {
     let distArr = []
-    triangles.forEach((tri, i) => {
-      const c = this.triangleCentroid([points[tri[0]], points[tri[1]], points[tri[2]]])
-      distArr.push([i, this.geoDistance(p, c)])
-    })
+    if (crs === Crs.Geographic) {
+      triangles.forEach((tri, i) => {
+        const c = this.triangleCentroid([points[tri[0]], points[tri[1]], points[tri[2]]])
+        distArr.push([i, this.geoDistance(p, c)])
+      })
+    } else {
+      triangles.forEach((tri, i) => {
+        const c = this.triangleCentroid([points[tri[0]], points[tri[1]], points[tri[2]]])
+        distArr.push([i, this.simpleDistance(p, c)])
+      })
+    }
     const count = distArr.length
     for (let i = 0; i < count; i++) {
       const tri = triangles[i]
@@ -779,7 +895,7 @@ export class PointGeoreferencer {
       })
       return res
     }
-    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, pt)
+    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, pt, this.crs1)
     const params = this.triangles1AffineParams[triIdx]
     return GeometryLib.affineTransformPoint(pt, params)
   }
@@ -800,7 +916,7 @@ export class PointGeoreferencer {
       })
       return res
     }
-    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, pt)
+    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, pt, this.crs2)
     const params = this.triangles2AffineParams[triIdx]
     return GeometryLib.affineTransformPoint(pt, params)
   }
