@@ -62,6 +62,14 @@ export class GeometryLib {
     return [x, y]
   }
 
+  static centroidsOfTriangles(triangles, pts) {
+    let res = []
+    triangles.forEach(tri => {
+      res.push(this.triangleCentroid(this.trianglePoints(tri, pts)))
+    })
+    return res
+  }
+
   /**
    * @summary Calculate the distances from the point (p) to each of the points in (pts), then sort them in ascending order
    * @param {number[]} p the point [x, y]
@@ -722,21 +730,20 @@ export class GeometryLib {
    * @summary Get the proper triangle (indices of the three vertices) for affine transform the point p
    * @param {number[][]} triangles indices of vertices of each triangle
    * @param {number[][]} points coordinates of control points
+   * @param {number[][]} centroids centroids of triangles
    * @param {number[]} p the point to be transformed
    * @param {Crs} crs the coordinate system of the points
    * @returns {number} the index of the triangle to be used for transformation
    */
-  static georefTriangleForPoint(triangles, points, p, crs) {
+  static georefTriangleForPoint(triangles, points, centroids, p, crs) {
     let distArr = []
     if (crs === Crs.Geographic) {
-      triangles.forEach((tri, i) => {
-        const c = this.triangleCentroid([points[tri[0]], points[tri[1]], points[tri[2]]])
-        distArr.push([i, this.geoDistance(p, c)])
+      centroids.forEach((centroid, i) => {
+        distArr.push([i, this.geoDistance(p, centroid)])
       })
     } else {
-      triangles.forEach((tri, i) => {
-        const c = this.triangleCentroid([points[tri[0]], points[tri[1]], points[tri[2]]])
-        distArr.push([i, this.simpleDistance(p, c)])
+      centroids.forEach((centroid, i) => {
+        distArr.push([i, this.simpleDistance(p, centroid)])
       })
     }
     const count = distArr.length
@@ -866,15 +873,19 @@ export class PointGeoreferencer {
     this.georefTIN1 = GeometryLib.generateTIN(this.ctrlPts1)
     this.georefTIN1Vetices = GeometryLib.pointsInTIN(this.georefTIN1)
     this.georefTIN1Triangles = GeometryLib.trianglesInTIN(this.georefTIN1)
+    this.georefTIN1Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN1Triangles, this.georefTIN1Vetices)
     this.tin1AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN1, this.ctrlPts2)
     this.georefTriangles1 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts1, this.ctrlPts2)
+    this.georefTriangles1Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles1, this.ctrlPts1)
     this.triangles1AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles1, this.ctrlPts1, this.ctrlPts2)
   
     this.georefTIN2 = GeometryLib.generateTIN(this.ctrlPts2)
     this.georefTIN2Vetices = GeometryLib.pointsInTIN(this.georefTIN2)
     this.georefTIN2Triangles = GeometryLib.trianglesInTIN(this.georefTIN2)
+    this.georefTIN2Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN2Triangles, this.georefTIN2Vetices)
     this.tin2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1)
     this.georefTriangles2 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts2, this.ctrlPts1)
+    this.georefTriangles2Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles2, this.ctrlPts2)
     this.triangles2AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles2, this.ctrlPts2, this.ctrlPts1)
   
   }
