@@ -1,5 +1,5 @@
 import fetch from 'node-fetch'
-import { PointGeoreferencer } from './index.js'
+import { PointGeoreferencer, Crs } from './index.js'
 
 fetch('https://si.akita-u.info/2023/lu/akita_data.json').then(res => res.json()).then(data => {
   let controlPoints = data.controlPoints
@@ -12,9 +12,9 @@ fetch('https://si.akita-u.info/2023/lu/akita_data.json').then(res => res.json())
   console.log(lnglats)
   console.log(xys_img)
   console.log(xys_hatsu)
-  let georef_lnglat_img = new PointGeoreferencer(lnglats, xys_img)
-  let georef_lnglat_hatsu = new PointGeoreferencer(lnglats, xys_hatsu)
-  let georef_img_hatsu = new PointGeoreferencer(xys_img, xys_hatsu)
+  let georef_lnglat_img = new PointGeoreferencer(lnglats, xys_img, Crs.Geographic, Crs.Simple)
+  let georef_lnglat_hatsu = new PointGeoreferencer(lnglats, xys_hatsu, Crs.Geographic, Crs.Simple)
+  let georef_img_hatsu = new PointGeoreferencer(xys_img, xys_hatsu, Crs.Simple, Crs.Simple)
 
   let res = georef_lnglat_hatsu.georefAffineWithTIN([140.1, 39.7])
   console.log(res)

@@ -734,23 +734,16 @@ class GeometryLib {
    * @returns {number} the index of the triangle to be used for transformation
    */
   static georefTriangleForPoint(triangles, points, centroids, p, crs) {
-    let distArr = [];
-    if (crs === Crs.Geographic) {
-      centroids.forEach((centroid, i) => {
-        distArr.push([i, this.geoDistance(p, centroid)]);
-      });
-    } else {
-      centroids.forEach((centroid, i) => {
-        distArr.push([i, this.simpleDistance(p, centroid)]);
-      });
-    }
+    let distArr = this.sortDistance(p, centroids, crs);
     const count = distArr.length;
     for (let i = 0; i < count; i++) {
-      const tri = triangles[i];
+      const tri = triangles[distArr[i][0]];
       if (this.isTriangleContainsPoint(points[tri[0]], points[tri[1]], points[tri[2]], p)) {
-        return i;
+        console.log('Triangle index: ' + distArr[i][0]);
+        return distArr[i][0];
       }
     }
+    console.log('No triangle includes the point');
     return distArr[0][0];
   }
 
@@ -893,7 +886,7 @@ class PointGeoreferencer {
       });
       return res;
     }
-    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, pt, this.crs1);
+    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, this.georefTriangles1Centroids, pt, this.crs1);
     const params = this.triangles1AffineParams[triIdx];
     return GeometryLib.affineTransformPoint(pt, params);
   }
@@ -914,7 +907,7 @@ class PointGeoreferencer {
       });
       return res;
     }
-    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, pt, this.crs2);
+    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, this.georefTriangles2Centroids, pt, this.crs2);
     const params = this.triangles2AffineParams[triIdx];
     return GeometryLib.affineTransformPoint(pt, params);
   }
@@ -936,19 +929,9 @@ class PointGeoreferencer {
       });
       return res;
     }
-    let triIdx = GeometryLib.triangleIndexContainsPoint(this.georefTIN1Triangles, this.georefTIN1Vetices, pt);
-    if (triIdx === null) triIdx = GeometryLib.nearestTriangleIndex(pt, this.georefTIN1Triangles, this.georefTIN1Vetices);
-    if (triIdx === null) {
-      if (handle_exception) {
-        return this.georefAffineWithTriangleContains(pt);
-      } else {
-        return null;
-      }
-    }
+    let triIdx = GeometryLib.georefTriangleForPoint(this.georefTIN1Triangles, this.georefTIN1Vetices, this.georefTIN1Centroids, pt, this.crs1);
     const params = this.tin1AffineParams[triIdx];
-    if (params) {
-      return GeometryLib.affineTransformPoint(pt, params);
-    } else {
+    if (params === undefined || params === null) {
       // exception: irregular triangle almost in the same line
       // fall down to the affine with triangle contains the point
       if (handle_exception) {
@@ -956,6 +939,8 @@ class PointGeoreferencer {
       } else {
         return null;
       }
+    } else {
+      return GeometryLib.affineTransformPoint(pt, params);
     }
   }
 
@@ -976,19 +961,9 @@ class PointGeoreferencer {
       });
       return res;
     }
-    let triIdx = GeometryLib.triangleIndexContainsPoint(this.georefTIN2Triangles, this.georefTIN2Vetices, pt);
-    if (triIdx === null) triIdx = GeometryLib.nearestTriangleIndex(pt, this.georefTIN2Triangles, this.georefTIN2Vetices);
-    if (triIdx === null) {
-      if (handle_exception) {
-        return this.georefInverseAffineWithTriangleContains(pt);
-      } else {
-        return null;
-      }
-    }
+    let triIdx = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vetices, this.georefTIN2Centroids, pt, this.crs2);
     const params = this.tin2AffineParams[triIdx];
-    if (params) {
-      return GeometryLib.affineTransformPoint(pt, params);
-    } else {
+    if (params === undefined || params === null) {
       // exception: irregular triangle almost in the same line
       // fall down to the affine with triangle contains the point
       if (handle_exception) {
@@ -996,6 +971,8 @@ class PointGeoreferencer {
       } else {
         return null;
       }
+    } else {
+      return GeometryLib.affineTransformPoint(pt, params);
     }
   }
 }
