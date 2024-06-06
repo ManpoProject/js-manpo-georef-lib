@@ -1,6 +1,6 @@
-import GeographicLib from 'geographiclib'
+import GeographicLib from 'geographiclib-geodesic'
 import Delaunator from 'delaunator'
-import lodash from 'lodash'
+import lodashsum from 'lodash/sum.js'
 import * as mathjs from 'mathjs'
 import { Enumify } from 'enumify'
 
@@ -490,8 +490,8 @@ export class GeometryLib {
    */
   static propOfPointOnLinestring(p, l, segIdx, crs) {
     const segLens = (crs === Crs.Geographic)? this.segmentLengthsOfGeoLinestring(l): this.segmentLengthsOfSimpleLinestring(l)
-    const refLen = lodash.sum(segLens.slice(0, segIdx)) + this.distance(l[segIdx], p, crs)
-    return refLen / lodash.sum(segLens)
+    const refLen = lodashsum(segLens.slice(0, segIdx)) + this.distance(l[segIdx], p, crs)
+    return refLen / lodashsum(segLens)
   }
 
   /**
@@ -508,7 +508,7 @@ export class GeometryLib {
       return l[l.length - 1]
     }
     const segLens = this.segmentLengthsOfSimpleLinestring(l)
-    const sumLen = lodash.sum(segLens)
+    const sumLen = lodashsum(segLens)
     const refLen = sumLen * prop
     let currentLen = 0
     for (let i = 0; i < segLens.length; i++) {
@@ -538,7 +538,7 @@ export class GeometryLib {
       return l[l.length - 1]
     }
     const segLens = this.segmentLengthsOfGeoLinestring(l)
-    const sumLen = lodash.sum(segLens)
+    const sumLen = lodashsum(segLens)
     const refLen = sumLen * prop
     let currentLen = 0
     for (let i = 0; i < segLens.length; i++) {
