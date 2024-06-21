@@ -9,6 +9,7 @@ const geodesic = GeographicLib.Geodesic.WGS84
 export class Crs extends Enumify {
   static Geographic = new Crs()
   static Simple = new Crs()
+  static _ = this.closeEnum()
 }
 
 export class GeometryLib {
@@ -680,51 +681,113 @@ export class GeometryLib {
     return rotateSegmentWithMatrix(seg2,  [[cos, -sin], [sin, cos]])
   }
 
+
   /**
-   * @summary Generate triangles for affine transform from corresponded geo points and 2D points
-   * @param {number[][]} ctrlPts1 [[lon1, lat1], [lon2, lat2], ...]
-   * @param {number[][]} ctrlPts2 [[x1, y1], [x2, y2], ...]
-   * @returns {number[][]} point indices of each triangle [[triIdx1-1, triIdx1-2, triIdx1-3], [...], ...]
-   */
+ * @summary Generate triangles for affine transform from corresponded geo points and 2D points
+ * @param {number[][]} ctrlPts1 [[lon1, lat1], [lon2, lat2], ...]
+ * @param {number[][]} ctrlPts2 [[x1, y1], [x2, y2], ...]
+ * @returns {number[][]} point indices of each triangle [[triIdx1-1, triIdx1-2, triIdx1-3], [...], ...]
+ */
   static generateTrianglesFromGeorefPoints(ctrlPts1, ctrlPts2) {
-    let res = []
-    const count = ctrlPts1.length
-    for (let a = 0; a < count -2; a++) {
-      for (let b = a + 1; b < count -1; b++) {
+    let res = [];
+    const count = ctrlPts1.length;
+    const epsilon = 1e-10;
+
+    for (let a = 0; a < count - 2; a++) {
+      for (let b = a + 1; b < count - 1; b++) {
         for (let c = b + 1; c < count; c++) {
-          const x0 = ctrlPts1[a][0], y0 = ctrlPts1[a][1],
-            x1 = ctrlPts1[b][0], y1 = ctrlPts1[b][1],
-            x2 = ctrlPts1[c][0], y2 = ctrlPts1[c][1],
-            u0 = ctrlPts2[a][0], v0 = ctrlPts2[a][1],
-            u1 = ctrlPts2[b][0], v1 = ctrlPts2[b][1],
-            u2 = ctrlPts2[c][0], v2 = ctrlPts2[c][1]
-          // check if on the same line
-          if (Math.abs((y1 - y0) * (x2 - x0) - (y2 - y0) * (x1 - x0)) < 1e-10) {
-            continue
-          }
-          if (Math.abs((v1 - v0) * (u2 - u0) - (v2 - v0) * (u1 - u0)) < 1e-10) {
-            continue
-          }
-          // check if there is any point inside the triangle
-          let inside = false
+          // Using destructuring to improve readability
+          const [x0, y0] = ctrlPts1[a];
+          const [x1, y1] = ctrlPts1[b];
+          const [x2, y2] = ctrlPts1[c];
+          const [u0, v0] = ctrlPts2[a];
+          const [u1, v1] = ctrlPts2[b];
+          const [u2, v2] = ctrlPts2[c];
+
+          // Collinearity check for geo points
+          if (Math.abs((y1 - y0) * (x2 - x0) - (y2 - y0) * (x1 - x0)) < epsilon) continue;
+          // Collinearity check for 2D points
+          if (Math.abs((v1 - v0) * (u2 - u0) - (v2 - v0) * (u1 - u0)) < epsilon) continue;
+
+          // Check if any other point is inside the triangle
+          let inside = false;
           for (let i = 0; i < count; i++) {
-            if (i === a || i === b || i === c) {
-              continue
-            }
-            if (this.isTriangleContainsPoint(ctrlPts1[a], ctrlPts1[b], ctrlPts1[c], ctrlPts1[i])) {
-              inside = true
-              break
+            if (i === a || i === b || i === c) continue;
+            if (this.isPointInTriangle([x0, y0], [x1, y1], [x2, y2], ctrlPts1[i])) {
+              inside = true;
+              break;
             }
           }
-          if (inside) {
-            continue
-          }
-          res.push([a, b, c])
+          if (inside) continue;
+
+          res.push([a, b, c]);
         }
       }
     }
-    return res
+    return res;
   }
+
+  /**
+   * Efficient point-in-triangle test using barycentric coordinates
+   */
+  static isPointInTriangle([x0, y0], [x1, y1], [x2, y2], [px, py]) {
+    const dX = px - x2;
+    const dY = py - y2;
+    const dX21 = x2 - x1;
+    const dY12 = y1 - y2;
+    const D = dY12 * (x0 - x2) + dX21 * (y0 - y2);
+    const s = dY12 * dX + dX21 * dY;
+    const t = (y2 - y0) * dX + (x0 - x2) * dY;
+
+    if (D < 0) return s <= 0 && t <= 0 && s + t >= D;
+    return s >= 0 && t >= 0 && s + t <= D;
+  }
+    
+  // /**
+  //  * @summary Generate triangles for affine transform from corresponded geo points and 2D points
+  //  * @param {number[][]} ctrlPts1 [[lon1, lat1], [lon2, lat2], ...]
+  //  * @param {number[][]} ctrlPts2 [[x1, y1], [x2, y2], ...]
+  //  * @returns {number[][]} point indices of each triangle [[triIdx1-1, triIdx1-2, triIdx1-3], [...], ...]
+  //  */
+  // static generateTrianglesFromGeorefPoints(ctrlPts1, ctrlPts2) {
+  //   let res = []
+  //   const count = ctrlPts1.length
+  //   for (let a = 0; a < count -2; a++) {
+  //     for (let b = a + 1; b < count -1; b++) {
+  //       for (let c = b + 1; c < count; c++) {
+  //         const x0 = ctrlPts1[a][0], y0 = ctrlPts1[a][1],
+  //           x1 = ctrlPts1[b][0], y1 = ctrlPts1[b][1],
+  //           x2 = ctrlPts1[c][0], y2 = ctrlPts1[c][1],
+  //           u0 = ctrlPts2[a][0], v0 = ctrlPts2[a][1],
+  //           u1 = ctrlPts2[b][0], v1 = ctrlPts2[b][1],
+  //           u2 = ctrlPts2[c][0], v2 = ctrlPts2[c][1]
+  //         // check if on the same line
+  //         if (Math.abs((y1 - y0) * (x2 - x0) - (y2 - y0) * (x1 - x0)) < 1e-10) {
+  //           continue
+  //         }
+  //         if (Math.abs((v1 - v0) * (u2 - u0) - (v2 - v0) * (u1 - u0)) < 1e-10) {
+  //           continue
+  //         }
+  //         // check if there is any point inside the triangle
+  //         let inside = false
+  //         for (let i = 0; i < count; i++) {
+  //           if (i === a || i === b || i === c) {
+  //             continue
+  //           }
+  //           if (this.isTriangleContainsPoint(ctrlPts1[a], ctrlPts1[b], ctrlPts1[c], ctrlPts1[i])) {
+  //             inside = true
+  //             break
+  //           }
+  //         }
+  //         if (inside) {
+  //           continue
+  //         }
+  //         res.push([a, b, c])
+  //       }
+  //     }
+  //   }
+  //   return res
+  // }
 
   /**
    * @summary Get the proper triangle (indices of the three vertices) for affine transform the point p
@@ -813,38 +876,39 @@ export class GeometryLib {
    * @returns {boolean} true if p is inside abc, false if not
    */
   static isTriangleContainsPoint(a, b, c, p) {
-    const AP = mathjs.subtract(p, a).concat([0])
-    const AB = mathjs.subtract(b, a).concat([0])
-    const BP = mathjs.subtract(p, b).concat([0])
-    const BC = mathjs.subtract(c, b).concat([0])
-    const CP = mathjs.subtract(p, c).concat([0])
-    const CA = mathjs.subtract(a, c).concat([0])
-    const APxAB = mathjs.cross(AP, AB)[2]
-    const BPxBC = mathjs.cross(BP, BC)[2]
-    const CPxCA = mathjs.cross(CP, CA)[2]
-    // on border
-    if (Math.abs(APxAB) < 1e-10) {
-      if ((BPxBC > 0 && CPxCA > 0) || (BPxBC < 0 && CPxCA < 0)) {
-        return true
-      }
-    }
-    if (Math.abs(BPxBC) < 1e-10) {
-      if ((APxAB > 0 && CPxCA > 0) || (APxAB < 0 && CPxCA < 0)) {
-        return true
-      }
-    }
-    if (Math.abs(CPxCA) < 1e-10) {
-      if ((BPxBC > 0 && APxAB > 0) || (BPxBC < 0 && APxAB < 0)) {
-        return true
-      }
-    }
+    return this.isPointInTriangle([a[0], a[1]], [b[0], b[1]], [c[0], c[1]], [p[0], p[1]])
+    // const AP = mathjs.subtract(p, a).concat([0])
+    // const AB = mathjs.subtract(b, a).concat([0])
+    // const BP = mathjs.subtract(p, b).concat([0])
+    // const BC = mathjs.subtract(c, b).concat([0])
+    // const CP = mathjs.subtract(p, c).concat([0])
+    // const CA = mathjs.subtract(a, c).concat([0])
+    // const APxAB = mathjs.cross(AP, AB)[2]
+    // const BPxBC = mathjs.cross(BP, BC)[2]
+    // const CPxCA = mathjs.cross(CP, CA)[2]
+    // // on border
+    // if (Math.abs(APxAB) < 1e-10) {
+    //   if ((BPxBC > 0 && CPxCA > 0) || (BPxBC < 0 && CPxCA < 0)) {
+    //     return true
+    //   }
+    // }
+    // if (Math.abs(BPxBC) < 1e-10) {
+    //   if ((APxAB > 0 && CPxCA > 0) || (APxAB < 0 && CPxCA < 0)) {
+    //     return true
+    //   }
+    // }
+    // if (Math.abs(CPxCA) < 1e-10) {
+    //   if ((BPxBC > 0 && APxAB > 0) || (BPxBC < 0 && APxAB < 0)) {
+    //     return true
+    //   }
+    // }
   
-    // inside
-    if ((APxAB > 0 && BPxBC > 0 && CPxCA > 0) || (APxAB < 0 && BPxBC < 0 && CPxCA < 0)) {
-      return true
-    }
-    // outside
-    return false
+    // // inside
+    // if ((APxAB > 0 && BPxBC > 0 && CPxCA > 0) || (APxAB < 0 && BPxBC < 0 && CPxCA < 0)) {
+    //   return true
+    // }
+    // // outside
+    // return false
   }
 }
 
