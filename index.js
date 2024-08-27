@@ -796,7 +796,7 @@ export class GeometryLib {
    * @param {number[][]} centroids centroids of triangles
    * @param {number[]} p the point to be transformed
    * @param {Crs} crs the coordinate system of the points
-   * @returns {number} the index of the triangle to be used for transformation
+   * @returns {[number, boolean]} the index of the triangle to be used for transformation and the point is inside the triangle or not
    */
   static georefTriangleForPoint(triangles, points, centroids, p, crs) {
     let distArr = this.sortDistance(p, centroids, crs)
@@ -805,11 +805,11 @@ export class GeometryLib {
       const tri = triangles[distArr[i][0]]
       if (this.isTriangleContainsPoint(points[tri[0]], points[tri[1]], points[tri[2]], p)) {
         console.log('Triangle index: ' + distArr[i][0])
-        return distArr[i][0]
+        return [distArr[i][0], true]
       }
     }
     console.log('No triangle includes the point')
-    return distArr[0][0]
+    return [distArr[0][0], false]
   }
 
   /**
@@ -953,9 +953,10 @@ export class PointGeoreferencer {
   /**
    * @summary geo-reference the point or points from coordinate sytem 1 to coordinate sytem 2 with affine transform based on nearest triangle that contains the point if possible
    * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
+   * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefAffineWithTriangleContains(pt) {
+  georefAffineWithTriangleContains(pt, extra=null) {
     if (this.params.tinOnly !== null && this.params.tinOnly === true) {
       return null
     }
@@ -964,22 +965,36 @@ export class PointGeoreferencer {
     }
     if (Array.isArray(pt[0])) {
       let res = []
-      pt.forEach(p => {
-        res.push(this.georefAffineWithTriangleContains(p))
-      })
+      if (extra !== null) {
+        extra.inside = []
+        pt.forEach(p => {
+          let e = {}
+          const coord = this.georefAffineWithTriangleContains(p, e)
+          extra.inside.push(e.inside)
+          res.push(coord)
+        })
+      } else {
+        pt.forEach(p => {
+          res.push(this.georefAffineWithTriangleContains(p))
+        })
+      }
       return res
     }
-    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, this.georefTriangles1Centroids, pt, this.crs1)
+    const [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, this.georefTriangles1Centroids, pt, this.crs1)
     const params = this.triangles1AffineParams[triIdx]
+    if (extra !== null) {
+      extra.inside = inside
+    }
     return GeometryLib.affineTransformPoint(pt, params)
   }
 
   /**
    * @summary geo-reference the point or points from coordinate sytem 2 to coordinate system 1 with affine transform based on nearest triangle that contains the point if possible
    * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
+   * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefInverseAffineWithTriangleContains(pt) {
+  georefInverseAffineWithTriangleContains(pt, extra=null) {
     if (this.params.tinOnly !== null && this.params.tinOnly === true) {
       return null
     }
@@ -988,13 +1003,26 @@ export class PointGeoreferencer {
     }
     if (Array.isArray(pt[0])) {
       let res = []
-      pt.forEach(p => {
-        res.push(this.georefInverseAffineWithTriangleContains(p))
-      })
+      if (extra !== null) {
+        extra.inside = []
+        pt.forEach(p => {
+          let e = {}
+          const coord = this.georefInverseAffineWithTriangleContains(p, e)
+          extra.inside.push(e.inside)
+          res.push(coord)
+        })
+      } else {
+        pt.forEach(p => {
+          res.push(this.georefInverseAffineWithTriangleContains(p))
+        })
+      }
       return res
     }
-    const triIdx = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, this.georefTriangles2Centroids, pt, this.crs2)
+    const [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, this.georefTriangles2Centroids, pt, this.crs2)
     const params = this.triangles2AffineParams[triIdx]
+    if (extra !== null) {
+      extra.inside = inside
+    }
     return GeometryLib.affineTransformPoint(pt, params)
   }
 
@@ -1002,30 +1030,47 @@ export class PointGeoreferencer {
    * @summary geo-reference the geographic point or points from coordinate system 1 to coordinate system 2 with affine transform based on TIN
    * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
    * @param {boolean} handle_exception if true, use the nearest triangle (not the ones in TIN) if no TIN triangle is available
+   * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefAffineWithTIN(pt, handle_exception=true) {
+  georefAffineWithTIN(pt, handle_exception=true, extra=null) {
     if (pt === undefined || pt === null) {
       return null
     }
     if (Array.isArray(pt[0])) {
       let res = []
-      pt.forEach(p => {
-        res.push(this.georefAffineWithTIN(p, handle_exception))
-      })
+      if (extra !== null) {
+        extra.inside = []
+        pt.forEach(p => {
+          let e = {}
+          const coord = this.georefAffineWithTIN(p, handle_exception, e)
+          extra.inside.push(e.inside)
+          res.push(coord)
+        })
+      } else {
+        pt.forEach(p => {
+          res.push(this.georefAffineWithTIN(p, handle_exception))
+        })
+      }
       return res
     }
-    let triIdx = GeometryLib.georefTriangleForPoint(this.georefTIN1Triangles, this.georefTIN1Vetices, this.georefTIN1Centroids, pt, this.crs1)
+    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN1Triangles, this.georefTIN1Vetices, this.georefTIN1Centroids, pt, this.crs1)
     const params = this.tin1AffineParams[triIdx]
     if (params === undefined || params === null) {
       // exception: irregular triangle almost in the same line
       // fall down to the affine with triangle contains the point
       if (handle_exception) {
-        return this.georefAffineWithTriangleContains(pt)
+        return this.georefAffineWithTriangleContains(pt, extra)
       } else {
+        if (extra !== null) {
+          extra.inside = false
+        }
         return null
       }
     } else {
+      if (extra !== null) {
+        extra.inside = inside
+      }
       return GeometryLib.affineTransformPoint(pt, params)
     }
   }
@@ -1034,30 +1079,47 @@ export class PointGeoreferencer {
    * @summary geo-reference the geographic point or points from coordinate system 2 to coordinate system 1 with affine transform based on TIN
    * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
    * @param {boolean} handle_exception if true, use the nearest triangle (not the ones in TIN) if no TIN triangle is available
+   * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefInverseAffineWithTIN(pt, handle_exception=true) {
+  georefInverseAffineWithTIN(pt, handle_exception=true, extra=null) {
     if (pt === undefined || pt === null) {
       return null
     }
     if (Array.isArray(pt[0])) {
       let res = []
-      pt.forEach(p => {
-        res.push(this.georefInverseAffineWithTIN(p, handle_exception))
-      })
+      if (extra !== null) {
+        extra.inside = []
+        pt.forEach(p => {
+          let e = {}
+          const coord = this.georefInverseAffineWithTIN(p, handle_exception, e)
+          extra.inside.push(e.inside)
+          res.push(coord)
+        })
+      } else {
+        pt.forEach(p => {
+          res.push(this.georefInverseAffineWithTIN(p, handle_exception))
+        })
+      }
       return res
     }
-    let triIdx = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vetices, this.georefTIN2Centroids, pt, this.crs2)
+    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vetices, this.georefTIN2Centroids, pt, this.crs2)
     const params = this.tin2AffineParams[triIdx]
     if (params === undefined || params === null) {
       // exception: irregular triangle almost in the same line
       // fall down to the affine with triangle contains the point
       if (handle_exception) {
-        return this.georefInverseAffineWithTriangleContains(pt)
+        return this.georefInverseAffineWithTriangleContains(pt, extra)
       } else {
+        if (extra !== null) {
+          extra.inside = false
+        }
         return null
       }
     } else {
+      if (extra !== null) {
+        extra.inside = inside
+      }
       return GeometryLib.affineTransformPoint(pt, params)
     }
   }

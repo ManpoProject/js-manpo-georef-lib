@@ -91,7 +91,9 @@ fs.readFile(filePath, 'utf-8', (err, fdata) => {
     crs2
   );
   console.log("georeferencing done")
-  console.log(georefer1.georefAffineWithTIN([140.11208879837486, 39.71031701796948]))
+  let extra = {}
+  console.log(georefer1.georefAffineWithTIN([[140.11208879837486, 39.71031701796948], [140.21238879837486, 39.21231701796948]], false, extra))
+  console.log(extra)
   // console.log(georefer1.georefAffineWithTriangleContains([140.11208879837486, 39.71031701796948]))
   // let controlPoints = data.controlPoints
   // let lnglats = [], xys_img = [], xys_hatsu = []
