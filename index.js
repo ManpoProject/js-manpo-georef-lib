@@ -2,6 +2,7 @@ import GeographicLib from 'geographiclib-geodesic'
 import Delaunator from 'delaunator'
 import lodashsum from 'lodash/sum.js'
 import * as mathjs from 'mathjs'
+import { lusolve, multiply, transpose, norm, pow, log } from 'mathjs'
 import { Enumify } from 'enumify'
 
 const geodesic = GeographicLib.Geodesic.WGS84
@@ -948,6 +949,192 @@ export class PointGeoreferencer {
       this.georefTriangles2Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles2, this.ctrlPts2)
       this.triangles2AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles2, this.ctrlPts2, this.ctrlPts1)
     }
+
+    // Pre-calculate coefficients if control points are available
+    if (this.ctrlPts1.length > 0 && this.ctrlPts1.length === this.ctrlPts2.length) {
+      this._initializeCoefficients();
+    }
+  }
+
+  /**
+ * Initializes all transformation coefficients and stores them in this.params.
+ * @private
+ */
+  _initializeCoefficients () {
+    // Ensure params objects exist
+    if (!this.params.poly) this.params.poly = {};
+    if (!this.params.tps) this.params.tps = {};
+
+    // Calculate polynomial coefficients
+    this.params.poly[1] = this._calculatePolynomialCoefficients(1);
+    this.params.poly[2] = this._calculatePolynomialCoefficients(2);
+    this.params.poly[3] = this._calculatePolynomialCoefficients(3); 
+
+    // Calculate Thin Plate Spline coefficients
+    this.params.tps = this._calculateTPSCoefficients();
+  }
+
+  /**
+   * Calculates coefficients for a polynomial transformation.
+   * @param {number} order The polynomial order (1 or 2).
+   * @returns {object|null} Object with coefficients {x, y} or null on failure.
+   * @private
+   */
+  _calculatePolynomialCoefficients (order) {
+    const n = this.ctrlPts1.length;
+    const requiredPoints = { 1: 3, 2: 6, 3: 10 };
+
+    if (n < requiredPoints[order]) {
+      console.warn(`Not enough points for polynomial order ${order}. Need ${requiredPoints[order]}, have ${n}.`);
+      return null;
+    }
+
+    const A = [];
+    const bx = this.ctrlPts2.map(p => p[0]);
+    const by = this.ctrlPts2.map(p => p[1]);
+
+    for (const [sx, sy] of this.ctrlPts1) {
+      if (order === 1) { // Affine
+        A.push([1, sx, sy]);
+      } else if (order === 2) { // Quadratic
+        A.push([1, sx, sy, sx * sy, sx * sx, sy * sy]);
+      } else if (order === 3) { // --- NEW ---: Cubic
+        A.push([1, sx, sy, sx * sy, sx * sx, sy * sy, sx * sx * sy, sx * sy * sy, sx * sx * sx, sy * sy * sy]);
+      }
+    }
+
+    try {
+      const AT = transpose(A);
+      const ATA = multiply(AT, A);
+      const ATbx = multiply(AT, bx);
+      const ATby = multiply(AT, by);
+
+      const coeffsX = lusolve(ATA, ATbx).flat();
+      const coeffsY = lusolve(ATA, ATby).flat();
+
+      return { x: coeffsX, y: coeffsY };
+    } catch (e) {
+      console.error(`Failed to solve for polynomial (order ${order}) coefficients:`, e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Calculates coefficients for the Thin Plate Spline transformation.
+   * @returns {object|null} The TPS weights and coefficients or null on failure.
+   * @private
+   */
+  _calculateTPSCoefficients () {
+    const n = this.ctrlPts1.length;
+    if (n < 3) return null;
+
+    const P = this.ctrlPts1.map(([sx, sy]) => [1, sx, sy]);
+    const K = this._makeTPSKernelMatrix();
+
+    const M_top = K.map((row, i) => [...row, ...P[i]]);
+    const M_bottom = transpose(P).map(row => [...row, 0, 0, 0]);
+    const M = [...M_top, ...M_bottom];
+
+    const yx = [...this.ctrlPts2.map(p => p[0]), 0, 0, 0];
+    const yy = [...this.ctrlPts2.map(p => p[1]), 0, 0, 0];
+
+    try {
+      const coeffsX = lusolve(M, yx).flat();
+      const coeffsY = lusolve(M, yy).flat();
+      return { x: coeffsX, y: coeffsY };
+    } catch (e) {
+      console.error("Failed to solve for TPS coefficients:", e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Creates the radial basis function kernel matrix for TPS.
+   * @private
+   */
+  _makeTPSKernelMatrix () {
+    const n = this.ctrlPts1.length;
+    const K = Array(n).fill(0).map(() => Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = i; j < n; j++) {
+        if (i === j) continue;
+        // U(r) = r^2 * log(r^2)
+        const r_sq = pow(norm([this.ctrlPts1[i][0] - this.ctrlPts1[j][0], this.ctrlPts1[i][1] - this.ctrlPts1[j][1]]), 2);
+        const val = r_sq > 0 ? r_sq * log(r_sq) : 0;
+        K[i][j] = K[j][i] = val;
+      }
+    }
+    return K;
+  }
+
+  /**
+   * Performs a polynomial transformation.
+   * @param {number[]} coords - The source coordinates [x, y].
+   * @param {number} order - The polynomial order (e.g., 1, 2, or 3).
+   * @returns {number[]|null} The transformed coordinates or null.
+   */
+  georefPolynomial (coords, order) {
+    const coeffs = this.params.poly?.[order];
+    if (!coeffs) {
+      console.error(`Polynomial (order ${order}) coefficients not available or not calculated.`);
+      return null;
+    }
+
+    const [x, y] = coords;
+    let vec;
+
+    if (order === 1) {
+      vec = [1, x, y];
+    } else if (order === 2) {
+      vec = [1, x, y, x * y, x * x, y * y];
+    } else if (order === 3) {
+      // --- NEW ---
+      vec = [1, x, y, x * y, x * x, y * y, x * x * y, x * y * y, x * x * x, y * y * y];
+    } else {
+      return null;
+    }
+
+    const newX = multiply(transpose(coeffs.x), vec);
+    const newY = multiply(transpose(coeffs.y), vec);
+    return [newX, newY];
+  }
+
+  /**
+   * Performs a Thin Plate Spline (TPS) transformation.
+   * @param {number[]} coords - The source coordinates [x, y].
+   * @returns {number[]|null} The transformed coordinates or null.
+   */
+  georefTPS (coords) {
+    const coeffs = this.params.tps;
+    if (!coeffs?.x) {
+      console.error("TPS coefficients not available or not calculated.");
+      return null;
+    }
+
+    const [x, y] = coords;
+    const n = this.ctrlPts1.length;
+
+    // Separate weights from affine coefficients
+    const weightsX = coeffs.x.slice(0, n);
+    const affineX = coeffs.x.slice(n);
+    const weightsY = coeffs.y.slice(0, n);
+    const affineY = coeffs.y.slice(n);
+
+    // Start with the affine part
+    let sumX = affineX[0] + affineX[1] * x + affineX[2] * y;
+    let sumY = affineY[0] + affineY[1] * x + affineY[2] * y;
+
+    // Add the non-linear (warp) part
+    for (let i = 0; i < n; i++) {
+      const r_sq = pow(norm([x - this.ctrlPts1[i][0], y - this.ctrlPts1[i][1]]), 2);
+      if (r_sq > 0) {
+        const kernelVal = r_sq * log(r_sq);
+        sumX += weightsX[i] * kernelVal;
+        sumY += weightsY[i] * kernelVal;
+      }
+    }
+
+    return [sumX, sumY];
   }
 
   /**

@@ -1,8 +1,7 @@
-import fetch from 'node-fetch'
 import fs from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { PointGeoreferencer, Crs } from './index.js'
+import { PointGeoreferencer, Crs } from './index.js';
 import { Map } from './models/Map.js';
 import { Point } from './models/Point.js';
 import { Correspondence } from './models/Correspondence.js';
@@ -12,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Path to the file
 const filePath = join(__dirname, 'test_data.json');
 
-console.log(filePath)
+console.log("Reading test data from:", filePath);
 
 const coordinateObjectToArray = (coordinates, type) => {
   return type === 'latlng' ? [coordinates.lng, coordinates.lat] : [coordinates.x, coordinates.y];
@@ -24,7 +23,6 @@ fs.readFile(filePath, 'utf-8', (err, fdata) => {
     return;
   }
   const data = JSON.parse(fdata);
-  // console.log(data)
   const maps = data.maps.map(map => {
     const newMap = new Map(map.name, map.coordinateSystem);
     map.points.forEach(point => {
@@ -51,15 +49,8 @@ fs.readFile(filePath, 'utf-8', (err, fdata) => {
   const map1 = maps[0];
   const map2 = maps[1];
 
-  // if (!map1 || !map2) {
-  //   console.error('One or both maps not found');
-  //   return;
-  // }
-
   const matchedCoordinatesMap1 = [];
   const matchedCoordinatesMap2 = [];
-  const pointIds1 = []
-  const pointIds2 = []
 
   // Filter correspondences that include points from both maps
   correspondences.forEach(correspondence => {
@@ -68,57 +59,71 @@ fs.readFile(filePath, 'utf-8', (err, fdata) => {
     if (pointsMap1.length && pointsMap2.length) {
       matchedCoordinatesMap1.push(coordinateObjectToArray(pointsMap1[0].point.coordinates, pointsMap1[0].point.type));
       matchedCoordinatesMap2.push(coordinateObjectToArray(pointsMap2[0].point.coordinates, pointsMap2[0].point.type));
-      pointIds1.push(pointsMap1[0].point.id);
-      pointIds2.push(pointsMap2[0].point.id);
     }
   });
 
-  if (matchedCoordinatesMap1.length !== matchedCoordinatesMap2.length) {
-    console.error('Mismatch in corresponding points between maps');
+  if (matchedCoordinatesMap1.length === 0) {
+    console.error('No matching control points found between maps.');
     return;
   }
 
-  // console.log('Coordinates from Map1:', matchedCoordinatesMap1);
-  // console.log('Coordinates from Map2:', matchedCoordinatesMap2);
-  console.log("starting georeferencing")
+  console.log(`Found ${matchedCoordinatesMap1.length} matching control points.`);
+  
   let crs1 = map1.coordinateSystem === 'xy' ? Crs.Simple : Crs.Geographic;
   let crs2 = map2.coordinateSystem === 'xy' ? Crs.Simple : Crs.Geographic;
-  //  use these coordinates for georeferencing or other purposes
-  const georefer1 = new PointGeoreferencer(
+  
+  // Use these coordinates for georeferencing or other purposes
+  const georeferencer = new PointGeoreferencer(
     matchedCoordinatesMap1, 
     matchedCoordinatesMap2, 
     crs1, 
     crs2
   );
-  console.log("georeferencing done")
-  let extra = {}
-  console.log(georefer1.georefAffineWithTIN([[140.11208879837486, 39.71031701796948], [140.21238879837486, 39.21231701796948]], false, extra))
-  console.log(extra)
-  // console.log(georefer1.georefAffineWithTriangleContains([140.11208879837486, 39.71031701796948]))
-  // let controlPoints = data.controlPoints
-  // let lnglats = [], xys_img = [], xys_hatsu = []
-  // controlPoints.forEach(cp => {
-  //   lnglats.push([cp.lng, cp.lat])
-  //   xys_img.push([cp.coordinates.akita1936.x, cp.coordinates.akita1936.y])
-  //   xys_hatsu.push([cp.coordinates.hatsusaburo.x, cp.coordinates.hatsusaburo.y])
-  // })
-  // console.log(lnglats)
-  // console.log(xys_img)
-  // console.log(xys_hatsu)
-  // let georef_lnglat_img = new PointGeoreferencer(lnglats, xys_img, Crs.Geographic, Crs.Simple)
-  // let georef_lnglat_hatsu = new PointGeoreferencer(lnglats, xys_hatsu, Crs.Geographic, Crs.Simple)
-  // let georef_img_hatsu = new PointGeoreferencer(xys_img, xys_hatsu, Crs.Simple, Crs.Simple)
+  
+  console.log("Georeferencer created. Now testing transformation methods...");
 
-  // let res = georef_lnglat_hatsu.georefAffineWithTIN([140.1, 39.7])
-  // console.log(res)
-  // res = georef_lnglat_hatsu.georefInverseAffineWithTIN([4533, 636])
-  // console.log(res)
-  // res = georef_lnglat_img.georefAffineWithTIN([140.1, 39.7])
-  // console.log(res)
-  // res = georef_lnglat_img.georefInverseAffineWithTIN([2022, 850])
-  // console.log(res)
-  // res = georef_img_hatsu.georefAffineWithTIN([2022, 850])
-  // console.log(res)
-  // res = georef_img_hatsu.georefInverseAffineWithTIN([4533, 636])
-  // console.log(res)
-})
+  // ---- NEW TEST SECTION ----
+  
+  // Select a point to test the transformations. We'll use the first control point.
+  const testPoint = matchedCoordinatesMap1[0];
+  const expectedTransformedPoint = matchedCoordinatesMap2[0];
+  
+  console.log("\n==============================================");
+  console.log("         Testing New Methods");
+  console.log("==============================================");
+  console.log(`\nTest Point:         [${testPoint.join(', ')}]`);
+  console.log(`Expected Result:    [${expectedTransformedPoint.join(', ')}] (from control points)`);
+  
+  // 1. Test Polynomial (Order 1)
+  console.log("\n--- 1. Polynomial (Order 1) ---");
+  const poly1Result = georeferencer.georefPolynomial(testPoint, 1);
+  if (poly1Result) {
+      console.log(`Result:             [${poly1Result.join(', ')}]`);
+  }
+
+  // 2. Test Polynomial (Order 2)
+  console.log("\n--- 2. Polynomial (Order 2) ---");
+  const poly2Result = georeferencer.georefPolynomial(testPoint, 2);
+  if (poly2Result) {
+      console.log(`Result:             [${poly2Result.join(', ')}]`);
+  } else {
+      console.log("Could not run test. Not enough control points for a 2nd order polynomial (need at least 6).");
+  }
+
+  // 3. Test Polynomial (Order 3)
+  console.log("\n--- 3. Polynomial (Order 3) ---");
+  const poly3Result = georeferencer.georefPolynomial(testPoint, 3);
+  if (poly3Result) {
+      console.log(`Result:             [${poly3Result.join(', ')}]`);
+  } else {
+      console.log("Could not run test. Not enough control points for a 3rd order polynomial (need at least 6).");
+  }
+  
+  // 4. Test Thin Plate Spline (TPS)
+  console.log("\n--- 4. Thin Plate Spline (TPS) ---");
+  const tpsResult = georeferencer.georefTPS(testPoint);
+  if (tpsResult) {
+      console.log(`Result:             [${tpsResult.join(', ')}]`);
+  }
+  console.log("\n==============================================\n");
+});
