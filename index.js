@@ -926,10 +926,19 @@ export class PointGeoreferencer {
     this.ctrlPts2 = (ctrlPts2) ? ctrlPts2 : []
     this.crs1 = (crs1) ? crs1 : Crs.Geographic
     this.crs2 = crs2 ? crs2 : Crs.Simple
-    this.params = params || {
-      forward: { poly: {}, tps: null },
-      inverse: { poly: {}, tps: null }
-    }
+    // 1. Start with the provided params or a new empty object.
+    const p = params || {};
+
+    // 2. Ensure the 'forward' and 'inverse' keys exist.
+    if (!p.forward) p.forward = {};
+    if (!p.inverse) p.inverse = {};
+    
+    // 3. Ensure the 'poly' key exists within both.
+    if (!p.forward.poly) p.forward.poly = {};
+    if (!p.inverse.poly) p.inverse.poly = {};
+
+    // 4. Set the now-guaranteed-to-be-safe params object.
+    this.params = p;
 
     this.georefTIN1 = GeometryLib.generateTIN(this.ctrlPts1)
     this.georefTIN1Vetices = GeometryLib.pointsInTIN(this.georefTIN1)
