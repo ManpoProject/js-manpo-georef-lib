@@ -926,7 +926,10 @@ export class PointGeoreferencer {
     this.ctrlPts2 = (ctrlPts2) ? ctrlPts2 : []
     this.crs1 = (crs1) ? crs1 : Crs.Geographic
     this.crs2 = crs2 ? crs2 : Crs.Simple
-    this.params = (params) ? params : {}
+    this.params = params || {
+      forward: { poly: {}, tps: null },
+      inverse: { poly: {}, tps: null }
+    }
 
     this.georefTIN1 = GeometryLib.generateTIN(this.ctrlPts1)
     this.georefTIN1Vetices = GeometryLib.pointsInTIN(this.georefTIN1)
@@ -949,58 +952,87 @@ export class PointGeoreferencer {
       this.georefTriangles2Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles2, this.ctrlPts2)
       this.triangles2AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles2, this.ctrlPts2, this.ctrlPts1)
     }
+  }
 
-    // Pre-calculate coefficients if control points are available
-    if (this.ctrlPts1.length > 0 && this.ctrlPts1.length === this.ctrlPts2.length) {
-      this._initializeCoefficients();
+  // --- FORWARD TRANSFORMATION METHODS ---
+
+  georefPolynomial (coords, order) {
+    // Calculate coefficients on-demand if they don't exist
+    if (this.params.forward.poly[order] === undefined) {
+      this.params.forward.poly[order] = this._calculatePolynomialCoefficients(this.ctrlPts1, this.ctrlPts2, order);
     }
+
+    const coeffs = this.params.forward.poly[order];
+    if (!coeffs) {
+      console.error(`Forward polynomial (order ${order}) coefficients could not be calculated.`);
+      return null;
+    }
+    return this._applyPolynomial(coords, order, coeffs);
   }
 
-  /**
- * Initializes all transformation coefficients and stores them in this.params.
- * @private
- */
-  _initializeCoefficients () {
-    // Ensure params objects exist
-    if (!this.params.poly) this.params.poly = {};
-    if (!this.params.tps) this.params.tps = {};
+  georefTPS (coords) {
+    // Calculate coefficients on-demand if they don't exist
+    if (this.params.forward.tps === null) {
+      this.params.forward.tps = this._calculateTPSCoefficients(this.ctrlPts1, this.ctrlPts2);
+    }
 
-    // Calculate polynomial coefficients
-    this.params.poly[1] = this._calculatePolynomialCoefficients(1);
-    this.params.poly[2] = this._calculatePolynomialCoefficients(2);
-    this.params.poly[3] = this._calculatePolynomialCoefficients(3); 
-
-    // Calculate Thin Plate Spline coefficients
-    this.params.tps = this._calculateTPSCoefficients();
+    const coeffs = this.params.forward.tps;
+    if (!coeffs) {
+      console.error("Forward TPS coefficients could not be calculated.");
+      return null;
+    }
+    return this._applyTPS(coords, coeffs, this.ctrlPts1);
   }
 
-  /**
-   * Calculates coefficients for a polynomial transformation.
-   * @param {number} order The polynomial order (1 or 2).
-   * @returns {object|null} Object with coefficients {x, y} or null on failure.
-   * @private
-   */
-  _calculatePolynomialCoefficients (order) {
-    const n = this.ctrlPts1.length;
+  // --- INVERSE TRANSFORMATION METHODS ---
+
+  georefInversePolynomial (coords, order) {
+    // Calculate coefficients on-demand if they don't exist
+    if (this.params.inverse.poly[order] === undefined) {
+      this.params.inverse.poly[order] = this._calculatePolynomialCoefficients(this.ctrlPts2, this.ctrlPts1, order);
+    }
+
+    const coeffs = this.params.inverse.poly[order];
+    if (!coeffs) {
+      console.error(`Inverse polynomial (order ${order}) coefficients could not be calculated.`);
+      return null;
+    }
+    return this._applyPolynomial(coords, order, coeffs);
+  }
+
+  georefInverseTPS (coords) {
+    // Calculate coefficients on-demand if they don't exist
+    if (this.params.inverse.tps === null) {
+      this.params.inverse.tps = this._calculateTPSCoefficients(this.ctrlPts2, this.ctrlPts1);
+    }
+
+    const coeffs = this.params.inverse.tps;
+    if (!coeffs) {
+      console.error("Inverse TPS coefficients could not be calculated.");
+      return null;
+    }
+    return this._applyTPS(coords, coeffs, this.ctrlPts2);
+  }
+
+  // --- PRIVATE CALCULATION & APPLY METHODS (No changes here) ---
+
+  _calculatePolynomialCoefficients (sourcePoints, targetPoints, order) {
+    const n = sourcePoints.length;
     const requiredPoints = { 1: 3, 2: 6, 3: 10 };
 
     if (n < requiredPoints[order]) {
       console.warn(`Not enough points for polynomial order ${order}. Need ${requiredPoints[order]}, have ${n}.`);
-      return null;
+      return false; // Return false to distinguish from null/successful calculation
     }
 
     const A = [];
-    const bx = this.ctrlPts2.map(p => p[0]);
-    const by = this.ctrlPts2.map(p => p[1]);
+    const bx = targetPoints.map(p => p[0]);
+    const by = targetPoints.map(p => p[1]);
 
-    for (const [sx, sy] of this.ctrlPts1) {
-      if (order === 1) { // Affine
-        A.push([1, sx, sy]);
-      } else if (order === 2) { // Quadratic
-        A.push([1, sx, sy, sx * sy, sx * sx, sy * sy]);
-      } else if (order === 3) { // --- NEW ---: Cubic
-        A.push([1, sx, sy, sx * sy, sx * sx, sy * sy, sx * sx * sy, sx * sy * sy, sx * sx * sx, sy * sy * sy]);
-      }
+    for (const [sx, sy] of sourcePoints) {
+      if (order === 1) A.push([1, sx, sy]);
+      else if (order === 2) A.push([1, sx, sy, sx * sy, sx * sx, sy * sy]);
+      else if (order === 3) A.push([1, sx, sy, sx * sy, sx * sx, sy * sy, sx * sx * sy, sx * sy * sy, sx * sx * sx, sy * sy * sy]);
     }
 
     try {
@@ -1008,58 +1040,42 @@ export class PointGeoreferencer {
       const ATA = multiply(AT, A);
       const ATbx = multiply(AT, bx);
       const ATby = multiply(AT, by);
-
-      const coeffsX = lusolve(ATA, ATbx).flat();
-      const coeffsY = lusolve(ATA, ATby).flat();
-
-      return { x: coeffsX, y: coeffsY };
+      return { x: lusolve(ATA, ATbx).flat(), y: lusolve(ATA, ATby).flat() };
     } catch (e) {
       console.error(`Failed to solve for polynomial (order ${order}) coefficients:`, e.message);
-      return null;
+      return false;
     }
   }
 
-  /**
-   * Calculates coefficients for the Thin Plate Spline transformation.
-   * @returns {object|null} The TPS weights and coefficients or null on failure.
-   * @private
-   */
-  _calculateTPSCoefficients () {
-    const n = this.ctrlPts1.length;
-    if (n < 3) return null;
+  _calculateTPSCoefficients (sourcePoints, targetPoints) {
+    const n = sourcePoints.length;
+    if (n < 3) return false;
 
-    const P = this.ctrlPts1.map(([sx, sy]) => [1, sx, sy]);
-    const K = this._makeTPSKernelMatrix();
+    const P = sourcePoints.map(([sx, sy]) => [1, sx, sy]);
+    const K = this._makeTPSKernelMatrix(sourcePoints);
 
     const M_top = K.map((row, i) => [...row, ...P[i]]);
     const M_bottom = transpose(P).map(row => [...row, 0, 0, 0]);
     const M = [...M_top, ...M_bottom];
 
-    const yx = [...this.ctrlPts2.map(p => p[0]), 0, 0, 0];
-    const yy = [...this.ctrlPts2.map(p => p[1]), 0, 0, 0];
+    const yx = [...targetPoints.map(p => p[0]), 0, 0, 0];
+    const yy = [...targetPoints.map(p => p[1]), 0, 0, 0];
 
     try {
-      const coeffsX = lusolve(M, yx).flat();
-      const coeffsY = lusolve(M, yy).flat();
-      return { x: coeffsX, y: coeffsY };
+      return { x: lusolve(M, yx).flat(), y: lusolve(M, yy).flat() };
     } catch (e) {
       console.error("Failed to solve for TPS coefficients:", e.message);
-      return null;
+      return false;
     }
   }
 
-  /**
-   * Creates the radial basis function kernel matrix for TPS.
-   * @private
-   */
-  _makeTPSKernelMatrix () {
-    const n = this.ctrlPts1.length;
+  _makeTPSKernelMatrix (points) {
+    const n = points.length;
     const K = Array(n).fill(0).map(() => Array(n).fill(0));
     for (let i = 0; i < n; i++) {
       for (let j = i; j < n; j++) {
         if (i === j) continue;
-        // U(r) = r^2 * log(r^2)
-        const r_sq = pow(norm([this.ctrlPts1[i][0] - this.ctrlPts1[j][0], this.ctrlPts1[i][1] - this.ctrlPts1[j][1]]), 2);
+        const r_sq = pow(norm([points[i][0] - points[j][0], points[i][1] - points[j][1]]), 2);
         const val = r_sq > 0 ? r_sq * log(r_sq) : 0;
         K[i][j] = K[j][i] = val;
       }
@@ -1067,73 +1083,35 @@ export class PointGeoreferencer {
     return K;
   }
 
-  /**
-   * Performs a polynomial transformation.
-   * @param {number[]} coords - The source coordinates [x, y].
-   * @param {number} order - The polynomial order (e.g., 1, 2, or 3).
-   * @returns {number[]|null} The transformed coordinates or null.
-   */
-  georefPolynomial (coords, order) {
-    const coeffs = this.params.poly?.[order];
-    if (!coeffs) {
-      console.error(`Polynomial (order ${order}) coefficients not available or not calculated.`);
-      return null;
-    }
-
+  _applyPolynomial (coords, order, coeffs) {
     const [x, y] = coords;
     let vec;
+    if (order === 1) vec = [1, x, y];
+    else if (order === 2) vec = [1, x, y, x * y, x * x, y * y];
+    else if (order === 3) vec = [1, x, y, x * y, x * x, y * y, x * x * y, x * y * y, x * x * x, y * y * y];
+    else return null;
 
-    if (order === 1) {
-      vec = [1, x, y];
-    } else if (order === 2) {
-      vec = [1, x, y, x * y, x * x, y * y];
-    } else if (order === 3) {
-      // --- NEW ---
-      vec = [1, x, y, x * y, x * x, y * y, x * x * y, x * y * y, x * x * x, y * y * y];
-    } else {
-      return null;
-    }
-
-    const newX = multiply(transpose(coeffs.x), vec);
-    const newY = multiply(transpose(coeffs.y), vec);
-    return [newX, newY];
+    return [multiply(transpose(coeffs.x), vec), multiply(transpose(coeffs.y), vec)];
   }
 
-  /**
-   * Performs a Thin Plate Spline (TPS) transformation.
-   * @param {number[]} coords - The source coordinates [x, y].
-   * @returns {number[]|null} The transformed coordinates or null.
-   */
-  georefTPS (coords) {
-    const coeffs = this.params.tps;
-    if (!coeffs?.x) {
-      console.error("TPS coefficients not available or not calculated.");
-      return null;
-    }
-
+  _applyTPS (coords, coeffs, refPoints) {
     const [x, y] = coords;
-    const n = this.ctrlPts1.length;
+    const n = refPoints.length;
 
-    // Separate weights from affine coefficients
-    const weightsX = coeffs.x.slice(0, n);
-    const affineX = coeffs.x.slice(n);
-    const weightsY = coeffs.y.slice(0, n);
-    const affineY = coeffs.y.slice(n);
+    const weightsX = coeffs.x.slice(0, n), affineX = coeffs.x.slice(n);
+    const weightsY = coeffs.y.slice(0, n), affineY = coeffs.y.slice(n);
 
-    // Start with the affine part
     let sumX = affineX[0] + affineX[1] * x + affineX[2] * y;
     let sumY = affineY[0] + affineY[1] * x + affineY[2] * y;
 
-    // Add the non-linear (warp) part
     for (let i = 0; i < n; i++) {
-      const r_sq = pow(norm([x - this.ctrlPts1[i][0], y - this.ctrlPts1[i][1]]), 2);
+      const r_sq = pow(norm([x - refPoints[i][0], y - refPoints[i][1]]), 2);
       if (r_sq > 0) {
         const kernelVal = r_sq * log(r_sq);
         sumX += weightsX[i] * kernelVal;
         sumY += weightsY[i] * kernelVal;
       }
     }
-
     return [sumX, sumY];
   }
 

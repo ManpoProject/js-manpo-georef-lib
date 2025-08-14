@@ -72,7 +72,6 @@ fs.readFile(filePath, 'utf-8', (err, fdata) => {
   let crs1 = map1.coordinateSystem === 'xy' ? Crs.Simple : Crs.Geographic;
   let crs2 = map2.coordinateSystem === 'xy' ? Crs.Simple : Crs.Geographic;
   
-  // Use these coordinates for georeferencing or other purposes
   const georeferencer = new PointGeoreferencer(
     matchedCoordinatesMap1, 
     matchedCoordinatesMap2, 
@@ -82,48 +81,61 @@ fs.readFile(filePath, 'utf-8', (err, fdata) => {
   
   console.log("Georeferencer created. Now testing transformation methods...");
 
-  // ---- NEW TEST SECTION ----
-  
-  // Select a point to test the transformations. We'll use the first control point.
-  const testPoint = matchedCoordinatesMap1[0];
-  const expectedTransformedPoint = matchedCoordinatesMap2[0];
+  const testPointForward = matchedCoordinatesMap1[0];
+  const expectedResultForward = matchedCoordinatesMap2[0];
   
   console.log("\n==============================================");
-  console.log("         Testing New Methods");
+  console.log("         Testing Forward Transformations");
   console.log("==============================================");
-  console.log(`\nTest Point:         [${testPoint.join(', ')}]`);
-  console.log(`Expected Result:    [${expectedTransformedPoint.join(', ')}] (from control points)`);
+  console.log(`\nTest Point:         [${testPointForward.join(', ')}]`);
+  console.log(`Expected Result:    [${expectedResultForward.join(', ')}]`);
   
-  // 1. Test Polynomial (Order 1)
-  console.log("\n--- 1. Polynomial (Order 1) ---");
-  const poly1Result = georeferencer.georefPolynomial(testPoint, 1);
-  if (poly1Result) {
-      console.log(`Result:             [${poly1Result.join(', ')}]`);
-  }
+  console.log("\n--- Polynomial (Order 1) ---");
+  const poly1Result = georeferencer.georefPolynomial(testPointForward, 1);
+  if (poly1Result) console.log(`Result:             [${poly1Result.join(', ')}]`);
 
-  // 2. Test Polynomial (Order 2)
-  console.log("\n--- 2. Polynomial (Order 2) ---");
-  const poly2Result = georeferencer.georefPolynomial(testPoint, 2);
-  if (poly2Result) {
-      console.log(`Result:             [${poly2Result.join(', ')}]`);
-  } else {
-      console.log("Could not run test. Not enough control points for a 2nd order polynomial (need at least 6).");
-  }
+  console.log("\n--- Polynomial (Order 2) ---");
+  const poly2Result = georeferencer.georefPolynomial(testPointForward, 2);
+  if (poly2Result) console.log(`Result:             [${poly2Result.join(', ')}]`);
+  else console.log("Skipped: Not enough points for 2nd order polynomial (need 6).");
 
-  // 3. Test Polynomial (Order 3)
-  console.log("\n--- 3. Polynomial (Order 3) ---");
-  const poly3Result = georeferencer.georefPolynomial(testPoint, 3);
-  if (poly3Result) {
-      console.log(`Result:             [${poly3Result.join(', ')}]`);
-  } else {
-      console.log("Could not run test. Not enough control points for a 3rd order polynomial (need at least 6).");
-  }
+  console.log("\n--- Polynomial (Order 3) ---");
+  const poly3Result = georeferencer.georefPolynomial(testPointForward, 3);
+  if (poly3Result) console.log(`Result:             [${poly3Result.join(', ')}]`);
+  else console.log("Skipped: Not enough points for 3rd order polynomial (need 10).");
   
-  // 4. Test Thin Plate Spline (TPS)
-  console.log("\n--- 4. Thin Plate Spline (TPS) ---");
-  const tpsResult = georeferencer.georefTPS(testPoint);
-  if (tpsResult) {
-      console.log(`Result:             [${tpsResult.join(', ')}]`);
-  }
+  console.log("\n--- Thin Plate Spline (TPS) ---");
+  const tpsResult = georeferencer.georefTPS(testPointForward);
+  if (tpsResult) console.log(`Result:             [${tpsResult.join(', ')}]`);
+
+  // ---- NEW INVERSE TEST SECTION ----
+  
+  const testPointInverse = matchedCoordinatesMap2[0];
+  const expectedResultInverse = matchedCoordinatesMap1[0];
+
+  console.log("\n==============================================");
+  console.log("         Testing Inverse Transformations");
+  console.log("==============================================");
+  console.log(`\nTest Point:         [${testPointInverse.join(', ')}]`);
+  console.log(`Expected Result:    [${expectedResultInverse.join(', ')}]`);
+
+  console.log("\n--- Inverse Polynomial (Order 1) ---");
+  const invPoly1Result = georeferencer.georefInversePolynomial(testPointInverse, 1);
+  if (invPoly1Result) console.log(`Result:             [${invPoly1Result.join(', ')}]`);
+
+  console.log("\n--- Inverse Polynomial (Order 2) ---");
+  const invPoly2Result = georeferencer.georefInversePolynomial(testPointInverse, 2);
+  if (invPoly2Result) console.log(`Result:             [${invPoly2Result.join(', ')}]`);
+  else console.log("Skipped: Not enough points for 2nd order polynomial (need 6).");
+
+  console.log("\n--- Inverse Polynomial (Order 3) ---");
+  const invPoly3Result = georeferencer.georefInversePolynomial(testPointInverse, 3);
+  if (invPoly3Result) console.log(`Result:             [${invPoly3Result.join(', ')}]`);
+  else console.log("Skipped: Not enough points for 3rd order polynomial (need 10).");
+
+  console.log("\n--- Inverse Thin Plate Spline (TPS) ---");
+  const invTpsResult = georeferencer.georefInverseTPS(testPointInverse);
+  if (invTpsResult) console.log(`Result:             [${invTpsResult.join(', ')}]`);
+
   console.log("\n==============================================\n");
 });
