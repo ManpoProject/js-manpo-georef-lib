@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "webpack",
-    "test": "node test-georeflib.js && exit 1"
+    "test": "node test-georeflib.js"
   },
   "repository": {
     "type": "git",

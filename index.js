@@ -2,10 +2,24 @@ import GeographicLib from 'geographiclib-geodesic'
 import Delaunator from 'delaunator'
 import lodashsum from 'lodash/sum.js'
 import * as mathjs from 'mathjs'
-import { lusolve, multiply, transpose, norm, pow, log } from 'mathjs'
+import { lusolve, lup, multiply, transpose } from 'mathjs'
 import { Enumify } from 'enumify'
 
 const geodesic = GeographicLib.Geodesic.WGS84
+
+/**
+ * @summary convert degrees to radians
+ * @param {number} deg degrees
+ * @returns {number} radians
+ */
+export const degsToRads = deg => (deg * Math.PI) / 180.0
+
+/**
+ * @summary convert radians to degrees
+ * @param {number} rad radians
+ * @returns {number} degrees
+ */
+export const radsToDegs = rad => rad * 180 / Math.PI
 
 export class Crs extends Enumify {
   static Geographic = new Crs()
@@ -23,7 +37,7 @@ export class GeometryLib {
    * @param {number[]} p2 2nd point, [lon2, lat2]
    * @returns {number} distance in meters
    */
-  static geoDistance(p1, p2) {
+  static geoDistance (p1, p2) {
     const r = geodesic.Inverse(p1[1], p1[0], p2[1], p2[0])
     return r.s12
   }
@@ -34,7 +48,7 @@ export class GeometryLib {
    * @param {number[]} p2 2nd point, [x2, y2]
    * @returns {number} distance
    */
-  static simpleDistance(p1, p2) {
+  static simpleDistance (p1, p2) {
     return Math.hypot(p1[0] - p2[0], p1[1] - p2[1])
   }
 
@@ -45,7 +59,7 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {number} distance
    */
-  static distance(p1, p2, crs) {
+  static distance (p1, p2, crs) {
     if (crs === Crs.Geographic) {
       return this.geoDistance(p1, p2)
     } else {
@@ -58,13 +72,13 @@ export class GeometryLib {
    * @param {number[][]} points three points of the triangle, in the form [[x1, y1], [x2, y2], [x3, y3]]
    * @returns {number[]} the centroid point [x, y]
    */
-  static triangleCentroid(points) {
+  static triangleCentroid (points) {
     const x = (points[0][0] + points[1][0] + points[2][0]) / 3
     const y = (points[0][1] + points[1][1] + points[2][1]) / 3
     return [x, y]
   }
 
-  static centroidsOfTriangles(triangles, pts) {
+  static centroidsOfTriangles (triangles, pts) {
     let res = []
     triangles.forEach(tri => {
       res.push(this.triangleCentroid(this.trianglePoints(tri, pts)))
@@ -79,7 +93,7 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {number[][]} array of the sorted distances with the index of the corresponded point, [[idx1, dist1], [idx2, dist2], ...]
    */
-  static sortDistance(p, pts, crs) {
+  static sortDistance (p, pts, crs) {
     let distArr = []
     if (crs === Crs.Geographic) {
       pts.forEach((pt, idx) => {
@@ -103,7 +117,7 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {Array} the nearest point [nearestPointIndex, [nearest_lon, nearest_lat]]
    */
-  static nearestPoint(p, pts, crs) {
+  static nearestPoint (p, pts, crs) {
     if (pts === undefined || pts === null) {
       return [-1, null]
     }
@@ -121,7 +135,7 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {Array} the nearest two point [nearestIndex, 2nd_nearestIndex, [nearest_lon, nearest_lat], [2nd_nearest_lon, 2nd_nearest_lat]]
    */
-  static nearestTwoPoints(p, pts, crs) {
+  static nearestTwoPoints (p, pts, crs) {
     if (pts === undefined || pts === null) {
       return [-1, -1, null, null]
     }
@@ -150,7 +164,7 @@ export class GeometryLib {
    * [2nd_nearest_lon, 2nd_nearest_lat],
    * [3rd_nearest_lon, 3rd_nearest_lat]]
    */
-  static nearestThreePoints(p, pts, crs) {
+  static nearestThreePoints (p, pts, crs) {
     if (pts === undefined || pts === null) {
       return [-1, -1, -1, null, null, null]
     }
@@ -184,16 +198,24 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {number[]} [idx1, idx2] the indices of the two points in the original array
    */
-  static farthestTwoPoints(pts, crs) {
+  static farthestTwoPoints (pts, crs) {
     const count = pts.length
-    let max_dist = -1, idx1 = -1, idx2 = -1
-    for (let i = 0; i < count - 1; i++) {
-      for (let j = i + 1; j < count; j++) {
-        const dist = (crs === Crs.Geographic)? this.geoDistance(pts[i], pts[j]) : this.simpleDistance(pts[i], pts[j])
-        if (dist > max_dist) {
-          max_dist = dist
-          idx1 = i
-          idx2 = j
+    let maxVal = -1, idx1 = -1, idx2 = -1
+    if (crs === Crs.Geographic) {
+      // Geographic: must use real distances (geodesic.Inverse is the bottleneck, not the loop)
+      for (let i = 0; i < count - 1; i++) {
+        for (let j = i + 1; j < count; j++) {
+          const dist = this.geoDistance(pts[i], pts[j])
+          if (dist > maxVal) { maxVal = dist; idx1 = i; idx2 = j }
+        }
+      }
+    } else {
+      // Simple: compare squared distances — monotonic, avoids N(N-1)/2 sqrt calls
+      for (let i = 0; i < count - 1; i++) {
+        for (let j = i + 1; j < count; j++) {
+          const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1]
+          const distSq = dx * dx + dy * dy
+          if (distSq > maxVal) { maxVal = distSq; idx1 = i; idx2 = j }
         }
       }
     }
@@ -205,7 +227,7 @@ export class GeometryLib {
    * @param {number[][]} pts points to generate the TIN
    * @returns {Delaunator} a Delaunator object of the TIN
    */
-  static generateTIN(pts) {
+  static generateTIN (pts) {
     return new Delaunator(this.pointsToCoords(pts))
   }
 
@@ -215,7 +237,7 @@ export class GeometryLib {
    * @param {Delaunator} tin the TIN, which is a Delaunator instance
    * @returns {number[][]} points of the triangle [[x0, y0], [x1, y1], [x2, y2]]
    */
-  static trianglePointsInTIN(tri, tin) {
+  static trianglePointsInTIN (tri, tin) {
     let res = []
     tri.forEach(p => {
       res.push(this.pointInCoordsByIndex(p, tin.coords))
@@ -228,7 +250,7 @@ export class GeometryLib {
    * @param {number[]} coords [x1, y1, x2, y2, ...]
    * @returns {number[][]} [[x1, y1], [x2, y2], ...]
    */
-  static coordsToPoints(coords) {
+  static coordsToPoints (coords) {
     if (coords === undefined || coords === null) {
       return []
     }
@@ -244,7 +266,7 @@ export class GeometryLib {
    * @param {Delaunator} tin the TIN, which is a Delaunator instance
    * @returns {number[][]} [[x1, y1], [x2, y2], ...]
    */
-  static pointsInTIN(tin) {
+  static pointsInTIN (tin) {
     return this.coordsToPoints(tin.coords)
   }
 
@@ -254,7 +276,7 @@ export class GeometryLib {
    * @param {Delaunator} tin the TIN, which is a Delaunator instance
    * @returns {number[][]} triangles that contain the vertex, in the form of [[pt_idx0, pt_idx1, pt_idx2], ...]
    */
-  static trianglesIncludeVertexIndexInTIN(idx, tin) {
+  static trianglesIncludeVertexIndexInTIN (idx, tin) {
     const tri = this.trianglesInTIN(tin)
     return this.trianglesIncludeVertexIndex(idx, tri)
   }
@@ -265,7 +287,7 @@ export class GeometryLib {
    * @param {number[][]} triangles point indices of the vertices of the triangles [[pt_idx0, pt_idx1, pt_idx2], ...]
    * @returns {number[][]} triangles that contain the vertex, in the form of [[pt_idx0, pt_idx1, pt_idx2], ...]
    */
-  static trianglesIncludeVertexIndex(idx, triangles) {
+  static trianglesIncludeVertexIndex (idx, triangles) {
     let res = []
     for (let i = 0; i < triangles.length; i++) {
       if (triangles[i].includes(idx)) {
@@ -282,7 +304,7 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {number} the index of the triangle in the triangles' list of the TIN
    */
-  static nearestTriangleInTIN(p, tin, crs) {
+  static nearestTriangleInTIN (p, tin, crs) {
     // 1. find the nearest point in TIN
     const [nearest_index, nearest_point] = this.nearestPoint(p, this.pointsInTIN(tin), crs)
     // 2. get the triangles related to the point
@@ -313,7 +335,7 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {number} the index of the triangle in the triangles' list
    */
-  static nearestTriangleIndex(p, triangles, vertices, crs) {
+  static nearestTriangleIndex (p, triangles, vertices, crs) {
     // 1. find the nearest point in TIN
     const [nearest_index, nearest_point] = this.nearestPoint(p, vertices, crs)
     // 2. get the triangles related to the point
@@ -345,27 +367,27 @@ export class GeometryLib {
    * @param {number[]} p2 2nd point of the segment [lon2, lat2]
    * @returns {number[]} the distance and the nearest point on the segment [dist, pm]
    */
-  static geoDistancePointToSegmentArc(p, p1, p2) {
+  static geoDistancePointToSegmentArc (p, p1, p2) {
     const inv12 = geodesic.Inverse(p1[1], p1[0], p2[1], p2[0])
     const bear12 = inv12.azi1
     const inv13 = geodesic.Inverse(p1[1], p1[0], p[1], p[0])
     const bear13 = inv13.azi1
     const dis13 = inv13.s12
     let diff = Math.abs(bear13 - bear12)
-    if (diff > Math.PI) {
-      diff = 2 * Math.PI - diff
+    if (diff > 180) {
+      diff = 360 - diff
     }
-    if (diff > (Math.PI / 2)) {
+    if (diff > 90) {
       return [dis13, p1]
     } else {
-      const dxt = Math.asin(Math.sin(dis13 / R) * Math.sin(degsToRads(bear13 - bear12))) * R
+      const dxt = Math.asin(Math.sin(dis13 / GeometryLib.R) * Math.sin(degsToRads(bear13 - bear12))) * GeometryLib.R
       const dis12 = inv12.s12
-      const dis14 = Math.acos(Math.cos(dis13 / R) / Math.cos(dxt / R)) * R
+      const dis14 = Math.acos(Math.cos(dis13 / GeometryLib.R) / Math.cos(dxt / GeometryLib.R)) * GeometryLib.R
       if (dis14 > dis12) {
         const dis23 = geodesic.Inverse(p2[1], p2[0], p[1], p[0]).s12
         return [dis23, p2]
       } else {
-        const direct12 = geodesic.Direct(lat1, lon1, bear12, dis14)
+        const direct12 = geodesic.Direct(p1[1], p1[0], bear12, dis14)
         const pm = [direct12.lon2, direct12.lat2]
         return [Math.abs(dxt), pm]
       }
@@ -379,10 +401,10 @@ export class GeometryLib {
    * @param {number[]} p2 2nd point of the segment [x2, y2]
    * @returns {number[]} the distance and the nearest point on the segment [dist, pm]
    */
-    static simpleDistancePointToSegment(p, p1, p2) {
-      const nearest = this.nearestPointOnSegment(p, p1, p2)
-      return [this.simpleDistance(p, nearest), nearest]
-    }
+  static simpleDistancePointToSegment (p, p1, p2) {
+    const nearest = this.nearestPointOnSegment(p, p1, p2)
+    return [this.simpleDistance(p, nearest), nearest]
+  }
 
   /**
    * @summary Find the nearest point on a line segment from a point in 2D coordinates
@@ -391,10 +413,11 @@ export class GeometryLib {
    * @param {number[]} p2 2nd point of the segment [x2, y2]
    * @returns {number[]} the nearest point on the segment [nearest_x, nearest_y]
    */
-  static nearestPointOnSegment(p, p1, p2) {
+  static nearestPointOnSegment (p, p1, p2) {
     const px = p2[0] - p1[0]
     const py = p2[1] - p1[1]
     const som = px * px + py * py
+    if (som === 0) return p1  // degenerate segment: p1 and p2 are the same point
     const u = ((p[0] - p1[0]) * px + (p[1] - p1[1]) * py) / som
     if (u >= 1) {
       return p2
@@ -414,7 +437,7 @@ export class GeometryLib {
    * [dist, [nearest_x, nearest_y], segment_index]
    * @throws an error if the parameters are illegal
    */
-  static distancePointToLinestring(p, l, crs) {
+  static distancePointToLinestring (p, l, crs) {
     if (p === undefined || p === null || p.length < 2) {
       throw new Error("Not a legal point")
     }
@@ -442,7 +465,7 @@ export class GeometryLib {
    * @param {number[][]} l [[lon1, lat1], [lon2, lat2], ...]
    * @returns {number[]} array of the distances [dist1, dist2, ...]
    */
-  static segmentLengthsOfGeoLinestring(l) {
+  static segmentLengthsOfGeoLinestring (l) {
     let distArr = []
     for (let i = 0; i < l.length - 1; i++) {
       distArr.push(this.geoDistance(l[i], l[i + 1]))
@@ -455,7 +478,7 @@ export class GeometryLib {
    * @param {number[][]} l [[x1, y1], [x2, y2], ...]
    * @returns {number[]} array of the distances [dist1, dist2, ...]
    */
-  static segmentLengthsOfSimpleLinestring(l) {
+  static segmentLengthsOfSimpleLinestring (l) {
     let distArr = []
     for (let i = 0; i < l.length - 1; i++) {
       distArr.push(this.simpleDistance(l[i], l[i + 1]))
@@ -473,7 +496,7 @@ export class GeometryLib {
    * @param {number} bf buffer range (in meters)
    * @returns {Array} the referenced point and the geo distance from the point to the polyline, [[x, y], dist]
    */
-  static linearRefPointOnLinestring(p, polyline1, polyline2, crs1, crs2, bf) {
+  static linearRefPointOnLinestring (p, polyline1, polyline2, crs1, crs2, bf) {
     const [dist, pm, segIdx] = this.distancePointToLinestring(p, polyline1, crs1)
     if (dist > bf) {
       return [null, Infinity]
@@ -490,10 +513,11 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {number} the proportion in the range [0, 1]
    */
-  static propOfPointOnLinestring(p, l, segIdx, crs) {
-    const segLens = (crs === Crs.Geographic)? this.segmentLengthsOfGeoLinestring(l): this.segmentLengthsOfSimpleLinestring(l)
+  static propOfPointOnLinestring (p, l, segIdx, crs) {
+    const segLens = (crs === Crs.Geographic) ? this.segmentLengthsOfGeoLinestring(l) : this.segmentLengthsOfSimpleLinestring(l)
+    const totalLen = lodashsum(segLens)
     const refLen = lodashsum(segLens.slice(0, segIdx)) + this.distance(l[segIdx], p, crs)
-    return refLen / lodashsum(segLens)
+    return refLen / totalLen
   }
 
   /**
@@ -502,7 +526,7 @@ export class GeometryLib {
    * @param {number[][]} l the polyline [[x1, y1], [x2, y2], ...]
    * @returns {number[]} the point [x, y]
    */
-  static pointOfPropOnSimpleLinestring(prop, l) {
+  static pointOfPropOnSimpleLinestring (prop, l) {
     if (prop <= 0) {
       return l[0]
     }
@@ -532,7 +556,7 @@ export class GeometryLib {
    * @param {number[][]} l the polyline [[lon1, lat1], [lon2, lat2], ...]
    * @returns {number[]} the point [lon, lat]
    */
-  static pointOfPropOnGeoLinestring(prop, l) {
+  static pointOfPropOnGeoLinestring (prop, l) {
     if (prop <= 0) {
       return l[0]
     }
@@ -548,7 +572,7 @@ export class GeometryLib {
       if (currentLen > refLen) {
         const d = currentLen - refLen
         const r = d / segLens[i]
-        const inv =  geodesic.Inverse(l[i][1], l[i][0], l[i + 1][1], l[i + 1][0])
+        const inv = geodesic.Inverse(l[i][1], l[i][0], l[i + 1][1], l[i + 1][0])
         const direct = geodesic.Direct(l[i][1], l[i][0], inv.azi1, inv.s12 * r)
         return [direct.lon2, direct.lat2]
       }
@@ -563,7 +587,7 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {number[]} the point [lon, lat] or [x, y]
    */
-  static pointOfPropOnLinestring(prop, l, crs) {
+  static pointOfPropOnLinestring (prop, l, crs) {
     if (crs === Crs.Geographic) {
       return this.pointOfPropOnGeoLinestring(prop, l)
     } else {
@@ -577,7 +601,7 @@ export class GeometryLib {
    * @param {number[][]} pts the points in the other coordinates
    * @returns {mathjs.Matrix[]} array of parameters for all the triangles
    */
-  static affineParamsOfTIN(tin, pts) {
+  static affineParamsOfTIN (tin, pts) {
     const triangles = this.trianglesInTIN(tin)
     let res = []
     triangles.forEach(tri => {
@@ -591,7 +615,7 @@ export class GeometryLib {
    * @param {number[][]} pts [[x1, y1], [x2, y2], ...]
    * @returns {number[]} [x1, y1, x2, y2, ...]
    */
-  static pointsToCoords(pts) {
+  static pointsToCoords (pts) {
     if (pts === undefined || pts === null) {
       return []
     }
@@ -607,11 +631,11 @@ export class GeometryLib {
    * @param {Delaunator} tin the TIN, which is a Delaunator instance
    * @returns {number[][]} point indices of the vertices of the triangles [[pt_idx0, pt_idx1, pt_idx2], ...]
    */
-  static trianglesInTIN(tin) {
+  static trianglesInTIN (tin) {
     const t = tin.triangles
     const len = tin.trianglesLen
     let res = []
-    for (let i = 0; i < len - 2; i += 3) {
+    for (let i = 0; i < len; i += 3) {
       res.push([t[i], t[i + 1], t[i + 2]])
     }
     return res
@@ -623,7 +647,7 @@ export class GeometryLib {
    * @param {number[][]} pts the points [[x, y], ...]
    * @returns {number[][]} points of the triangle [[x0, y0], [x1, y1], [x2, y2]]
    */
-  static trianglePoints(tri, pts) {
+  static trianglePoints (tri, pts) {
     return [pts[tri[0]], pts[tri[1]], pts[tri[2]]]
   }
 
@@ -633,7 +657,7 @@ export class GeometryLib {
    * @param {number[]} coords coordinates [x0, y0, x1, y1, ...]
    * @returns {number[]} idx = i => [xi, yi]
    */
-  static pointInCoordsByIndex(idx, coords) {
+  static pointInCoordsByIndex (idx, coords) {
     return [coords[idx * 2], coords[idx * 2 + 1]]
   }
 
@@ -643,7 +667,7 @@ export class GeometryLib {
    * @param {mathjs.Matrix} t the matrix of params for affine transform
    * @returns {number[]} transformed point [u, v]
    */
-  static affineTransformPoint(p, t) {
+  static affineTransformPoint (p, t) {
     const p_homogeneous = mathjs.matrix([p[0], p[1], 1]);
     const p_transformed = mathjs.multiply(t, p_homogeneous);
     return [p_transformed.get([0]), p_transformed.get([1])];
@@ -655,8 +679,15 @@ export class GeometryLib {
    * @param {mathjs.Matrix} t the matrix of params for inverse affine transform
    * @returns {number[]} inversed point [u, v]
    */
-  static affineTransformInversePoint(p, t) {
-    const t_inv = mathjs.inv(t)
+  static affineTransformInversePoint (p, t) {
+    // Cache the inverted matrix keyed by the matrix object to avoid
+    // recomputing mathjs.inv() on every call when transforming batches of points.
+    if (!GeometryLib._invCache) GeometryLib._invCache = new WeakMap()
+    let t_inv = GeometryLib._invCache.get(t)
+    if (!t_inv) {
+      t_inv = mathjs.inv(t)
+      GeometryLib._invCache.set(t, t_inv)
+    }
     return this.affineTransformPoint(p, t_inv)
   }
 
@@ -667,7 +698,7 @@ export class GeometryLib {
    * @param {number[][]} seg2 the segment, like [[x1, y1], [x2, y2]]
    * @returns {number[]} transformed point [x, y]
    */
-  static getSimilarPoint(p, seg1, seg2) {
+  static getSimilarPoint (p, seg1, seg2) {
     const v1 = mathjs.subtract(seg1[1], seg1[0])
     const v2 = mathjs.subtract(p, seg1[0])
     const norm1 = mathjs.norm(v1), norm2 = mathjs.norm(v2)
@@ -677,9 +708,20 @@ export class GeometryLib {
     if (mathjs.abs(norm2) < 1e-10) {
       return seg2[0]
     }
-    const dot = mathjs.dot(v1, v2), cross = mathjs.cross(v1, v2)
-    const cos = dot / norm1 / norm2, sin = cross / norm1 / norm2
-    return rotateSegmentWithMatrix(seg2,  [[cos, -sin], [sin, cos]])
+    const dot = mathjs.dot(v1, v2)
+    // 2D cross product: z-component of v1 × v2 (mathjs.cross requires 3D vectors)
+    const cross = v1[0] * v2[1] - v1[1] * v2[0]
+    // Scale factor = norm2 / norm1; combined cos/sin already divided by norm1*norm2,
+    // so multiply by norm2² to get the scaled rotation applied to seg2's vector.
+    const norm1sq = norm1 * norm1
+    const sCos = dot / norm1sq   // (norm2/norm1) * cos(angle)
+    const sSin = cross / norm1sq // (norm2/norm1) * sin(angle)
+    const w = mathjs.subtract(seg2[1], seg2[0])
+    // Apply rotated+scaled offset to seg2[0]
+    return [
+      seg2[0][0] + w[0] * sCos - w[1] * sSin,
+      seg2[0][1] + w[0] * sSin + w[1] * sCos
+    ]
   }
 
 
@@ -689,7 +731,7 @@ export class GeometryLib {
  * @param {number[][]} ctrlPts2 [[x1, y1], [x2, y2], ...]
  * @returns {number[][]} point indices of each triangle [[triIdx1-1, triIdx1-2, triIdx1-3], [...], ...]
  */
-  static generateTrianglesFromGeorefPoints(ctrlPts1, ctrlPts2) {
+  static generateTrianglesFromGeorefPoints (ctrlPts1, ctrlPts2) {
     let res = [];
     const count = ctrlPts1.length;
     const epsilon = 1e-10;
@@ -731,7 +773,7 @@ export class GeometryLib {
   /**
    * Efficient point-in-triangle test using barycentric coordinates
    */
-  static isPointInTriangle([x0, y0], [x1, y1], [x2, y2], [px, py]) {
+  static isPointInTriangle ([x0, y0], [x1, y1], [x2, y2], [px, py]) {
     const dX = px - x2;
     const dY = py - y2;
     const dX21 = x2 - x1;
@@ -743,52 +785,8 @@ export class GeometryLib {
     if (D < 0) return s <= 0 && t <= 0 && s + t >= D;
     return s >= 0 && t >= 0 && s + t <= D;
   }
-    
-  // /**
-  //  * @summary Generate triangles for affine transform from corresponded geo points and 2D points
-  //  * @param {number[][]} ctrlPts1 [[lon1, lat1], [lon2, lat2], ...]
-  //  * @param {number[][]} ctrlPts2 [[x1, y1], [x2, y2], ...]
-  //  * @returns {number[][]} point indices of each triangle [[triIdx1-1, triIdx1-2, triIdx1-3], [...], ...]
-  //  */
-  // static generateTrianglesFromGeorefPoints(ctrlPts1, ctrlPts2) {
-  //   let res = []
-  //   const count = ctrlPts1.length
-  //   for (let a = 0; a < count -2; a++) {
-  //     for (let b = a + 1; b < count -1; b++) {
-  //       for (let c = b + 1; c < count; c++) {
-  //         const x0 = ctrlPts1[a][0], y0 = ctrlPts1[a][1],
-  //           x1 = ctrlPts1[b][0], y1 = ctrlPts1[b][1],
-  //           x2 = ctrlPts1[c][0], y2 = ctrlPts1[c][1],
-  //           u0 = ctrlPts2[a][0], v0 = ctrlPts2[a][1],
-  //           u1 = ctrlPts2[b][0], v1 = ctrlPts2[b][1],
-  //           u2 = ctrlPts2[c][0], v2 = ctrlPts2[c][1]
-  //         // check if on the same line
-  //         if (Math.abs((y1 - y0) * (x2 - x0) - (y2 - y0) * (x1 - x0)) < 1e-10) {
-  //           continue
-  //         }
-  //         if (Math.abs((v1 - v0) * (u2 - u0) - (v2 - v0) * (u1 - u0)) < 1e-10) {
-  //           continue
-  //         }
-  //         // check if there is any point inside the triangle
-  //         let inside = false
-  //         for (let i = 0; i < count; i++) {
-  //           if (i === a || i === b || i === c) {
-  //             continue
-  //           }
-  //           if (this.isTriangleContainsPoint(ctrlPts1[a], ctrlPts1[b], ctrlPts1[c], ctrlPts1[i])) {
-  //             inside = true
-  //             break
-  //           }
-  //         }
-  //         if (inside) {
-  //           continue
-  //         }
-  //         res.push([a, b, c])
-  //       }
-  //     }
-  //   }
-  //   return res
-  // }
+
+
 
   /**
    * @summary Get the proper triangle (indices of the three vertices) for affine transform the point p
@@ -799,19 +797,39 @@ export class GeometryLib {
    * @param {Crs} crs the coordinate system of the points
    * @returns {[number, boolean]} the index of the triangle to be used for transformation and the point is inside the triangle or not
    */
-  static georefTriangleForPoint(triangles, points, centroids, p, crs) {
-    let distArr = this.sortDistance(p, centroids, crs)
-    const count = distArr.length
-    for (let i = 0; i < count; i++) {
+  static georefTriangleForPoint (triangles, points, centroids, p, crs) {
+    // Compute distances to all centroids once (O(N), unavoidable)
+    const geo = crs === Crs.Geographic
+    const distArr = centroids.map((c, i) => [i, geo ? this.geoDistance(p, c) : this.simpleDistance(p, c)])
+
+    // Fast path: find the nearest centroid with a linear scan (no sort)
+    // then check only that triangle. For points inside the TIN this almost
+    // always succeeds, skipping the O(N log N) sort entirely.
+    let nearestEntry = distArr[0]
+    for (let i = 1; i < distArr.length; i++) {
+      if (distArr[i][1] < nearestEntry[1]) nearestEntry = distArr[i]
+    }
+    const nearestTri = triangles[nearestEntry[0]]
+    if (this.isTriangleContainsPoint(points[nearestTri[0]], points[nearestTri[1]], points[nearestTri[2]], p)) {
+      // console.log('Triangle index: ' + nearestEntry[0])
+      return [nearestEntry[0], true]
+    }
+
+    // Fallback: sort and check remaining triangles in order of distance.
+    // Reached only for points near triangle boundaries or outside the hull.
+    distArr.sort((a, b) => a[1] - b[1])
+    for (let i = 0; i < distArr.length; i++) {
+      if (distArr[i][0] === nearestEntry[0]) continue  // already checked above
       const tri = triangles[distArr[i][0]]
       if (this.isTriangleContainsPoint(points[tri[0]], points[tri[1]], points[tri[2]], p)) {
-        console.log('Triangle index: ' + distArr[i][0])
+        // console.log('Triangle index: ' + distArr[i][0])
         return [distArr[i][0], true]
       }
     }
-    console.log('No triangle includes the point')
+    // console.log('No triangle includes the point')
     return [distArr[0][0], false]
   }
+
 
   /**
    * @summary Find a triangle that contains the point in a list of triangles
@@ -820,7 +838,7 @@ export class GeometryLib {
    * @param {number[]} p the point
    * @returns {number|null} the index of the triangle, or null if no such triangle
    */
-  static triangleIndexContainsPoint(triangles, vertices, p) {
+  static triangleIndexContainsPoint (triangles, vertices, p) {
     let i = 0
     for (i = 0; i < triangles.length; i++) {
       const tri = triangles[i]
@@ -835,7 +853,7 @@ export class GeometryLib {
    * @param {number[][]} tri2 the triangle [[u0, v0], [u1, v1], [u2, v2]]
    * @returns {mathjs.Matrix} matrix of the parameters for affine transform [m1, m2, m3, m4, tx, ty]
    */
-  static affineParamsOfTriangle(tri1, tri2) {
+  static affineParamsOfTriangle (tri1, tri2) {
     const aug1 = mathjs.matrix([
       [tri1[0][0], tri1[1][0], tri1[2][0]],
       [tri1[0][1], tri1[1][1], tri1[2][1]],
@@ -858,7 +876,7 @@ export class GeometryLib {
    * @param {number[][]} ctrlPts2 georef points in the 2nd CRS, like, [[x1, y1], [x2, y2], ...]
    * @returns {mathjs.Matrix[]} array of parameter matrices for all the triangles
    */
-  static affineParamsOfTriangles(triangles, ctrlPts1, ctrlPts2) {
+  static affineParamsOfTriangles (triangles, ctrlPts1, ctrlPts2) {
     let res = []
     triangles.forEach(tri => {
       const tri1 = [ctrlPts1[tri[0]], ctrlPts1[tri[1]], ctrlPts1[tri[2]]]
@@ -876,40 +894,8 @@ export class GeometryLib {
    * @param {number[]} p the point p [x, y]
    * @returns {boolean} true if p is inside abc, false if not
    */
-  static isTriangleContainsPoint(a, b, c, p) {
-    return this.isPointInTriangle([a[0], a[1]], [b[0], b[1]], [c[0], c[1]], [p[0], p[1]])
-    // const AP = mathjs.subtract(p, a).concat([0])
-    // const AB = mathjs.subtract(b, a).concat([0])
-    // const BP = mathjs.subtract(p, b).concat([0])
-    // const BC = mathjs.subtract(c, b).concat([0])
-    // const CP = mathjs.subtract(p, c).concat([0])
-    // const CA = mathjs.subtract(a, c).concat([0])
-    // const APxAB = mathjs.cross(AP, AB)[2]
-    // const BPxBC = mathjs.cross(BP, BC)[2]
-    // const CPxCA = mathjs.cross(CP, CA)[2]
-    // // on border
-    // if (Math.abs(APxAB) < 1e-10) {
-    //   if ((BPxBC > 0 && CPxCA > 0) || (BPxBC < 0 && CPxCA < 0)) {
-    //     return true
-    //   }
-    // }
-    // if (Math.abs(BPxBC) < 1e-10) {
-    //   if ((APxAB > 0 && CPxCA > 0) || (APxAB < 0 && CPxCA < 0)) {
-    //     return true
-    //   }
-    // }
-    // if (Math.abs(CPxCA) < 1e-10) {
-    //   if ((BPxBC > 0 && APxAB > 0) || (BPxBC < 0 && APxAB < 0)) {
-    //     return true
-    //   }
-    // }
-  
-    // // inside
-    // if ((APxAB > 0 && BPxBC > 0 && CPxCA > 0) || (APxAB < 0 && BPxBC < 0 && CPxCA < 0)) {
-    //   return true
-    // }
-    // // outside
-    // return false
+  static isTriangleContainsPoint (a, b, c, p) {
+    return this.isPointInTriangle(a, b, c, p)
   }
 }
 
@@ -921,17 +907,17 @@ export class PointGeoreferencer {
    * @param {Crs} crs2 default buffer range if not specified
    * @returns {PointGeoreferencer}
    */
-  constructor(ctrlPts1=[], ctrlPts2=[], crs1=Crs.Geographic, crs2=Crs.Simple, params=null) {
+  constructor (ctrlPts1 = [], ctrlPts2 = [], crs1 = Crs.Geographic, crs2 = Crs.Simple, params = null) {
     this.ctrlPts1 = (ctrlPts1) ? ctrlPts1 : []
     this.ctrlPts2 = (ctrlPts2) ? ctrlPts2 : []
     this.crs1 = (crs1) ? crs1 : Crs.Geographic
     this.crs2 = crs2 ? crs2 : Crs.Simple
-    
+
     const p = params || {};
     // Ensure the 'forward' and 'inverse' keys exist.
     if (!p.forward) p.forward = {};
     if (!p.inverse) p.inverse = {};
-    
+
     // Ensure the 'poly' object exists within both.
     if (!p.forward.poly) p.forward.poly = {};
     if (!p.inverse.poly) p.inverse.poly = {};
@@ -944,9 +930,9 @@ export class PointGeoreferencer {
     this.params = p;
 
     this.georefTIN1 = GeometryLib.generateTIN(this.ctrlPts1)
-    this.georefTIN1Vetices = GeometryLib.pointsInTIN(this.georefTIN1)
+    this.georefTIN1Vertices = GeometryLib.pointsInTIN(this.georefTIN1)
     this.georefTIN1Triangles = GeometryLib.trianglesInTIN(this.georefTIN1)
-    this.georefTIN1Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN1Triangles, this.georefTIN1Vetices)
+    this.georefTIN1Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN1Triangles, this.georefTIN1Vertices)
     this.tin1AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN1, this.ctrlPts2)
     if (this.params.tinOnly !== null && this.params.tinOnly === false) {
       this.georefTriangles1 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts1, this.ctrlPts2)
@@ -955,9 +941,9 @@ export class PointGeoreferencer {
     }
 
     this.georefTIN2 = GeometryLib.generateTIN(this.ctrlPts2)
-    this.georefTIN2Vetices = GeometryLib.pointsInTIN(this.georefTIN2)
+    this.georefTIN2Vertices = GeometryLib.pointsInTIN(this.georefTIN2)
     this.georefTIN2Triangles = GeometryLib.trianglesInTIN(this.georefTIN2)
-    this.georefTIN2Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN2Triangles, this.georefTIN2Vetices)
+    this.georefTIN2Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN2Triangles, this.georefTIN2Vertices)
     this.tin2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1)
     if (this.params.tinOnly !== null && this.params.tinOnly === false) {
       this.georefTriangles2 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts2, this.ctrlPts1)
@@ -1052,7 +1038,8 @@ export class PointGeoreferencer {
       const ATA = multiply(AT, A);
       const ATbx = multiply(AT, bx);
       const ATby = multiply(AT, by);
-      return { x: lusolve(ATA, ATbx).flat(), y: lusolve(ATA, ATby).flat() };
+      const lupATA = lup(ATA)
+      return { x: lusolve(lupATA, ATbx).toArray().flat(), y: lusolve(lupATA, ATby).toArray().flat() };
     } catch (e) {
       console.error(`Failed to solve for polynomial (order ${order}) coefficients:`, e.message);
       return false;
@@ -1074,7 +1061,8 @@ export class PointGeoreferencer {
     const yy = [...targetPoints.map(p => p[1]), 0, 0, 0];
 
     try {
-      return { x: lusolve(M, yx).flat(), y: lusolve(M, yy).flat() };
+      const lupM = lup(M)
+      return { x: lusolve(lupM, yx).toArray().flat(), y: lusolve(lupM, yy).toArray().flat() };
     } catch (e) {
       console.error("Failed to solve for TPS coefficients:", e.message);
       return false;
@@ -1087,8 +1075,9 @@ export class PointGeoreferencer {
     for (let i = 0; i < n; i++) {
       for (let j = i; j < n; j++) {
         if (i === j) continue;
-        const r_sq = pow(norm([points[i][0] - points[j][0], points[i][1] - points[j][1]]), 2);
-        const val = r_sq > 0 ? r_sq * log(r_sq) : 0;
+        const dx = points[i][0] - points[j][0], dy = points[i][1] - points[j][1];
+        const r_sq = dx * dx + dy * dy;
+        const val = r_sq > 0 ? r_sq * Math.log(r_sq) : 0;
         K[i][j] = K[j][i] = val;
       }
     }
@@ -1117,9 +1106,10 @@ export class PointGeoreferencer {
     let sumY = affineY[0] + affineY[1] * x + affineY[2] * y;
 
     for (let i = 0; i < n; i++) {
-      const r_sq = pow(norm([x - refPoints[i][0], y - refPoints[i][1]]), 2);
+      const dx = x - refPoints[i][0], dy = y - refPoints[i][1];
+      const r_sq = dx * dx + dy * dy;
       if (r_sq > 0) {
-        const kernelVal = r_sq * log(r_sq);
+        const kernelVal = r_sq * Math.log(r_sq);
         sumX += weightsX[i] * kernelVal;
         sumY += weightsY[i] * kernelVal;
       }
@@ -1133,7 +1123,7 @@ export class PointGeoreferencer {
    * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefAffineWithTriangleContains(pt, extra=null) {
+  georefAffineWithTriangleContains (pt, extra = null) {
     if (this.params.tinOnly !== null && this.params.tinOnly === true) {
       return null
     }
@@ -1171,7 +1161,7 @@ export class PointGeoreferencer {
    * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefInverseAffineWithTriangleContains(pt, extra=null) {
+  georefInverseAffineWithTriangleContains (pt, extra = null) {
     if (this.params.tinOnly !== null && this.params.tinOnly === true) {
       return null
     }
@@ -1210,7 +1200,7 @@ export class PointGeoreferencer {
    * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefAffineWithTIN(pt, handle_exception=true, extra=null) {
+  georefAffineWithTIN (pt, handle_exception = true, extra = null) {
     if (pt === undefined || pt === null) {
       return null
     }
@@ -1231,7 +1221,7 @@ export class PointGeoreferencer {
       }
       return res
     }
-    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN1Triangles, this.georefTIN1Vetices, this.georefTIN1Centroids, pt, this.crs1)
+    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN1Triangles, this.georefTIN1Vertices, this.georefTIN1Centroids, pt, this.crs1)
     const params = this.tin1AffineParams[triIdx]
     if (params === undefined || params === null) {
       // exception: irregular triangle almost in the same line
@@ -1259,7 +1249,7 @@ export class PointGeoreferencer {
    * @param {object|null} [extra=null] extra parameters
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefInverseAffineWithTIN(pt, handle_exception=true, extra=null) {
+  georefInverseAffineWithTIN (pt, handle_exception = true, extra = null) {
     if (pt === undefined || pt === null) {
       return null
     }
@@ -1280,7 +1270,7 @@ export class PointGeoreferencer {
       }
       return res
     }
-    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vetices, this.georefTIN2Centroids, pt, this.crs2)
+    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vertices, this.georefTIN2Centroids, pt, this.crs2)
     const params = this.tin2AffineParams[triIdx]
     if (params === undefined || params === null) {
       // exception: irregular triangle almost in the same line
@@ -1301,17 +1291,3 @@ export class PointGeoreferencer {
     }
   }
 }
-
-/**
- * @summary convert radians to degrees
- * @param {number} rad radians
- * @returns {number} degrees
- */
-const radsToDegs = rad => rad * 180 / Math.PI
-
-/**
- * @summary convert degrees to radians
- * @param {number} deg degrees
- * @returns {number} radians
- */
-const degsToRads = deg => (deg * Math.PI) / 180.0
