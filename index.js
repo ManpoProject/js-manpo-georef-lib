@@ -79,11 +79,7 @@ export class GeometryLib {
   }
 
   static centroidsOfTriangles (triangles, pts) {
-    let res = []
-    triangles.forEach(tri => {
-      res.push(this.triangleCentroid(this.trianglePoints(tri, pts)))
-    })
-    return res
+    return triangles.map(tri => this.triangleCentroid(this.trianglePoints(tri, pts)))
   }
 
   /**
@@ -94,20 +90,10 @@ export class GeometryLib {
    * @returns {number[][]} array of the sorted distances with the index of the corresponded point, [[idx1, dist1], [idx2, dist2], ...]
    */
   static sortDistance (p, pts, crs) {
-    let distArr = []
-    if (crs === Crs.Geographic) {
-      pts.forEach((pt, idx) => {
-        distArr.push([idx, this.geoDistance(p, pt)])
-      })
-    } else {
-      pts.forEach((pt, idx) => {
-        distArr.push([idx, this.simpleDistance(p, pt)])
-      })
-    }
-    distArr.sort((a, b) => {
-      return a[1] - b[1]
-    })
-    return distArr
+    const distFn = crs === Crs.Geographic
+      ? pt => this.geoDistance(p, pt)
+      : pt => this.simpleDistance(p, pt)
+    return pts.map((pt, idx) => [idx, distFn(pt)]).sort((a, b) => a[1] - b[1])
   }
 
   /**
@@ -124,8 +110,16 @@ export class GeometryLib {
     if (pts.length === 1) {
       return [0, pts[0]]
     }
-    const distArr = this.sortDistance(p, pts, crs)
-    return [distArr[0][0], pts[distArr[0][0]]]
+    const distFn = crs === Crs.Geographic
+      ? (a, b) => this.geoDistance(a, b)
+      : (a, b) => this.simpleDistance(a, b)
+    let bestIdx = 0
+    let bestDist = distFn(p, pts[0])
+    for (let i = 1; i < pts.length; i++) {
+      const d = distFn(p, pts[i])
+      if (d < bestDist) { bestDist = d; bestIdx = i }
+    }
+    return [bestIdx, pts[bestIdx]]
   }
 
   /**
@@ -238,11 +232,7 @@ export class GeometryLib {
    * @returns {number[][]} points of the triangle [[x0, y0], [x1, y1], [x2, y2]]
    */
   static trianglePointsInTIN (tri, tin) {
-    let res = []
-    tri.forEach(p => {
-      res.push(this.pointInCoordsByIndex(p, tin.coords))
-    })
-    return res
+    return tri.map(p => this.pointInCoordsByIndex(p, tin.coords))
   }
 
   /**
@@ -602,12 +592,8 @@ export class GeometryLib {
    * @returns {mathjs.Matrix[]} array of parameters for all the triangles
    */
   static affineParamsOfTIN (tin, pts) {
-    const triangles = this.trianglesInTIN(tin)
-    let res = []
-    triangles.forEach(tri => {
-      res.push(this.affineParamsOfTriangle(this.trianglePointsInTIN(tri, tin), this.trianglePoints(tri, pts)))
-    })
-    return res
+    return this.trianglesInTIN(tin).map(tri =>
+      this.affineParamsOfTriangle(this.trianglePointsInTIN(tri, tin), this.trianglePoints(tri, pts)))
   }
 
   /**
@@ -634,11 +620,7 @@ export class GeometryLib {
   static trianglesInTIN (tin) {
     const t = tin.triangles
     const len = tin.trianglesLen
-    let res = []
-    for (let i = 0; i < len; i += 3) {
-      res.push([t[i], t[i + 1], t[i + 2]])
-    }
-    return res
+    return Array.from({ length: len / 3 }, (_, i) => [t[i * 3], t[i * 3 + 1], t[i * 3 + 2]])
   }
 
   /**
@@ -877,13 +859,10 @@ export class GeometryLib {
    * @returns {mathjs.Matrix[]} array of parameter matrices for all the triangles
    */
   static affineParamsOfTriangles (triangles, ctrlPts1, ctrlPts2) {
-    let res = []
-    triangles.forEach(tri => {
-      const tri1 = [ctrlPts1[tri[0]], ctrlPts1[tri[1]], ctrlPts1[tri[2]]]
-      const tri2 = [ctrlPts2[tri[0]], ctrlPts2[tri[1]], ctrlPts2[tri[2]]]
-      res.push(this.affineParamsOfTriangle(tri1, tri2))
-    })
-    return res
+    return triangles.map(tri => this.affineParamsOfTriangle(
+      [ctrlPts1[tri[0]], ctrlPts1[tri[1]], ctrlPts1[tri[2]]],
+      [ctrlPts2[tri[0]], ctrlPts2[tri[1]], ctrlPts2[tri[2]]]
+    ))
   }
 
   /**
@@ -903,8 +882,8 @@ export class PointGeoreferencer {
   /**
    * @param {number[][]} ctrlPts1 coordinates of control points in CRS1
    * @param {number[][]} ctrlPts2 coordinates of control points in CRS2
-   * @param {Crs} crs1 buffer range in meters of georef lines
-   * @param {Crs} crs2 default buffer range if not specified
+   * @param {Crs} crs1 coordinate reference system of ctrlPts1 (default: Crs.Geographic)
+   * @param {Crs} crs2 coordinate reference system of ctrlPts2 (default: Crs.Simple)
    * @returns {PointGeoreferencer}
    */
   constructor (ctrlPts1 = [], ctrlPts2 = [], crs1 = Crs.Geographic, crs2 = Crs.Simple, params = null) {
@@ -912,6 +891,13 @@ export class PointGeoreferencer {
     this.ctrlPts2 = (ctrlPts2) ? ctrlPts2 : []
     this.crs1 = (crs1) ? crs1 : Crs.Geographic
     this.crs2 = crs2 ? crs2 : Crs.Simple
+
+    if (this.ctrlPts1.length !== this.ctrlPts2.length) {
+      throw new Error(
+        `PointGeoreferencer: ctrlPts1 and ctrlPts2 must have the same length ` +
+        `(got ${this.ctrlPts1.length} vs ${this.ctrlPts2.length})`
+      )
+    }
 
     const p = params || {};
     // Ensure the 'forward' and 'inverse' keys exist.
@@ -934,7 +920,7 @@ export class PointGeoreferencer {
     this.georefTIN1Triangles = GeometryLib.trianglesInTIN(this.georefTIN1)
     this.georefTIN1Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN1Triangles, this.georefTIN1Vertices)
     this.tin1AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN1, this.ctrlPts2)
-    if (this.params.tinOnly !== null && this.params.tinOnly === false) {
+    if (this.params.tinOnly === false) {
       this.georefTriangles1 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts1, this.ctrlPts2)
       this.georefTriangles1Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles1, this.ctrlPts1)
       this.triangles1AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles1, this.ctrlPts1, this.ctrlPts2)
@@ -945,7 +931,7 @@ export class PointGeoreferencer {
     this.georefTIN2Triangles = GeometryLib.trianglesInTIN(this.georefTIN2)
     this.georefTIN2Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN2Triangles, this.georefTIN2Vertices)
     this.tin2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1)
-    if (this.params.tinOnly !== null && this.params.tinOnly === false) {
+    if (this.params.tinOnly === false) {
       this.georefTriangles2 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts2, this.ctrlPts1)
       this.georefTriangles2Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles2, this.ctrlPts2)
       this.triangles2AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles2, this.ctrlPts2, this.ctrlPts1)
@@ -1124,7 +1110,7 @@ export class PointGeoreferencer {
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
   georefAffineWithTriangleContains (pt, extra = null) {
-    if (this.params.tinOnly !== null && this.params.tinOnly === true) {
+    if (this.params.tinOnly === true) {
       return null
     }
     if (pt === undefined || pt === null) {
@@ -1162,7 +1148,7 @@ export class PointGeoreferencer {
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
   georefInverseAffineWithTriangleContains (pt, extra = null) {
-    if (this.params.tinOnly !== null && this.params.tinOnly === true) {
+    if (this.params.tinOnly === true) {
       return null
     }
     if (pt === undefined || pt === null) {
