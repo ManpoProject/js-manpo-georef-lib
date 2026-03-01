@@ -912,31 +912,98 @@ export class PointGeoreferencer {
     if (p.forward.tps === undefined) p.forward.tps = null;
     if (p.inverse.tps === undefined) p.inverse.tps = null;
 
+    // Lazy-init flags — TIN data is computed on first use (see _computeForwardTIN etc.)
+    p.forward.tin = false;
+    p.inverse.tin = false;
+    p.forward.triangles = false;
+    p.inverse.triangles = false;
+
     // Set the now-guaranteed-to-be-safe params object.
     this.params = p;
 
-    this.georefTIN1 = GeometryLib.generateTIN(this.ctrlPts1)
-    this.georefTIN1Vertices = GeometryLib.pointsInTIN(this.georefTIN1)
-    this.georefTIN1Triangles = GeometryLib.trianglesInTIN(this.georefTIN1)
-    this.georefTIN1Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN1Triangles, this.georefTIN1Vertices)
-    this.tin1AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN1, this.ctrlPts2)
-    if (this.params.tinOnly === false) {
-      this.georefTriangles1 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts1, this.ctrlPts2)
-      this.georefTriangles1Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles1, this.ctrlPts1)
-      this.triangles1AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles1, this.ctrlPts1, this.ctrlPts2)
-    }
+    // TIN data fields (populated lazily by _computeForwardTIN / _computeInverseTIN)
+    this.georefTIN1 = null;
+    this.georefTIN1Vertices = null;
+    this.georefTIN1Triangles = null;
+    this.georefTIN1Centroids = null;
+    this.tin1AffineParams = null;
 
-    this.georefTIN2 = GeometryLib.generateTIN(this.ctrlPts2)
-    this.georefTIN2Vertices = GeometryLib.pointsInTIN(this.georefTIN2)
-    this.georefTIN2Triangles = GeometryLib.trianglesInTIN(this.georefTIN2)
-    this.georefTIN2Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN2Triangles, this.georefTIN2Vertices)
-    this.tin2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1)
-    if (this.params.tinOnly === false) {
-      this.georefTriangles2 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts2, this.ctrlPts1)
-      this.georefTriangles2Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles2, this.ctrlPts2)
-      this.triangles2AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles2, this.ctrlPts2, this.ctrlPts1)
-    }
+    this.georefTIN2 = null;
+    this.georefTIN2Vertices = null;
+    this.georefTIN2Triangles = null;
+    this.georefTIN2Centroids = null;
+    this.tin2AffineParams = null;
+
+    // Triangle-contains data fields (populated lazily, only when tinOnly !== true)
+    this.georefTriangles1 = null;
+    this.georefTriangles1Centroids = null;
+    this.triangles1AffineParams = null;
+
+    this.georefTriangles2 = null;
+    this.georefTriangles2Centroids = null;
+    this.triangles2AffineParams = null;
   }
+
+  /**
+   * Force computation of all TIN and triangle data that would otherwise be
+   * computed lazily on the first call to each transform method.
+   *
+   * Calling this right after construction restores the original eager behaviour
+   * and is recommended for realtime usage where the very first transform call
+   * must be fast.
+   *
+   * @returns {PointGeoreferencer} this (for chaining)
+   */
+  precompute () {
+    this._computeForwardTIN();
+    this._computeInverseTIN();
+    if (this.params.tinOnly === false) {
+      this._computeForwardTriangles();
+      this._computeInverseTriangles();
+    }
+    return this;
+  }
+
+  /** @private — compute and cache forward TIN (CRS1 → CRS2) data */
+  _computeForwardTIN () {
+    if (this.params.forward.tin) return;
+    this.georefTIN1 = GeometryLib.generateTIN(this.ctrlPts1);
+    this.georefTIN1Vertices = GeometryLib.pointsInTIN(this.georefTIN1);
+    this.georefTIN1Triangles = GeometryLib.trianglesInTIN(this.georefTIN1);
+    this.georefTIN1Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN1Triangles, this.georefTIN1Vertices);
+    this.tin1AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN1, this.ctrlPts2);
+    this.params.forward.tin = true;
+  }
+
+  /** @private — compute and cache inverse TIN (CRS2 → CRS1) data */
+  _computeInverseTIN () {
+    if (this.params.inverse.tin) return;
+    this.georefTIN2 = GeometryLib.generateTIN(this.ctrlPts2);
+    this.georefTIN2Vertices = GeometryLib.pointsInTIN(this.georefTIN2);
+    this.georefTIN2Triangles = GeometryLib.trianglesInTIN(this.georefTIN2);
+    this.georefTIN2Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN2Triangles, this.georefTIN2Vertices);
+    this.tin2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1);
+    this.params.inverse.tin = true;
+  }
+
+  /** @private — compute and cache forward triangle-contains (CRS1 → CRS2) data */
+  _computeForwardTriangles () {
+    if (this.params.forward.triangles) return;
+    this.georefTriangles1 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts1, this.ctrlPts2);
+    this.georefTriangles1Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles1, this.ctrlPts1);
+    this.triangles1AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles1, this.ctrlPts1, this.ctrlPts2);
+    this.params.forward.triangles = true;
+  }
+
+  /** @private — compute and cache inverse triangle-contains (CRS2 → CRS1) data */
+  _computeInverseTriangles () {
+    if (this.params.inverse.triangles) return;
+    this.georefTriangles2 = GeometryLib.generateTrianglesFromGeorefPoints(this.ctrlPts2, this.ctrlPts1);
+    this.georefTriangles2Centroids = GeometryLib.centroidsOfTriangles(this.georefTriangles2, this.ctrlPts2);
+    this.triangles2AffineParams = GeometryLib.affineParamsOfTriangles(this.georefTriangles2, this.ctrlPts2, this.ctrlPts1);
+    this.params.inverse.triangles = true;
+  }
+
 
   // --- FORWARD TRANSFORMATION METHODS ---
 
@@ -1113,6 +1180,7 @@ export class PointGeoreferencer {
     if (this.params.tinOnly === true) {
       return null
     }
+    this._computeForwardTriangles()
     if (pt === undefined || pt === null) {
       return null
     }
@@ -1151,6 +1219,7 @@ export class PointGeoreferencer {
     if (this.params.tinOnly === true) {
       return null
     }
+    this._computeInverseTriangles()
     if (pt === undefined || pt === null) {
       return null
     }
@@ -1187,6 +1256,7 @@ export class PointGeoreferencer {
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
   georefAffineWithTIN (pt, handle_exception = true, extra = null) {
+    this._computeForwardTIN()
     if (pt === undefined || pt === null) {
       return null
     }
@@ -1236,6 +1306,7 @@ export class PointGeoreferencer {
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
   georefInverseAffineWithTIN (pt, handle_exception = true, extra = null) {
+    this._computeInverseTIN()
     if (pt === undefined || pt === null) {
       return null
     }
