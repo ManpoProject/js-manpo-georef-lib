@@ -1145,7 +1145,7 @@ export class PointGeoreferencer {
     if (order === 1) vec = [1, x, y];
     else if (order === 2) vec = [1, x, y, x * y, x * x, y * y];
     else if (order === 3) vec = [1, x, y, x * y, x * x, y * y, x * x * y, x * y * y, x * x * x, y * y * y];
-    else return null;
+    else throw new RangeError(`_applyPolynomial: unsupported polynomial order ${order} (must be 1, 2, or 3)`)
 
     return [multiply(transpose(coeffs.x), vec), multiply(transpose(coeffs.y), vec)];
   }
