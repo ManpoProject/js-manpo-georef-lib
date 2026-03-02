@@ -253,6 +253,43 @@ radsToDegs(Math.PI)  // 180
 
 ---
 
+## 🌍 High-Precision Affine Projections (`ProjectionLib`)
+
+**Warning on Geographic Affine Distortions:**
+When you use `Crs.Geographic` with an affine-based method (`georefAffineWithTIN`, `georefPolynomial`, etc.), the library computes the affine matrix directly on the `[lon, lat]` degrees as if they were a flat Cartesian plane. Because 1° of longitude shrinks as you move away from the equator, this introduces affine shear and rotation distortion at high latitudes or across very large map areas.
+
+To avoid this, you can use the built-in `ProjectionLib` to dynamically project your points to **UTM (Universal Transverse Mercator)** meters before applying an affine transform:
+
+```javascript
+import { PointGeoreferencer, Crs, ProjectionLib } from 'manpo-georeflib';
+
+// 1. Project your geographic control points to flat UTM meters
+const ctrlPtsGeo = [[139.7, 35.6], [139.8, 35.6], [139.7, 35.7]];
+const zone = ProjectionLib.getUTMZone(ctrlPtsGeo[0][0]); // Get the zone (e.g., 54)
+const ctrlPtsUTM = ctrlPtsGeo.map(p => {
+  const metric = ProjectionLib.wgs84ToUTM(p[0], p[1], zone);
+  return [metric.x, metric.y];
+});
+
+// 2. Setup the Georeferencer using the projected (metric) control points
+const ctrlPtsPixel = [[0, 0], [100, 0], [0, 100]];
+// Notice we use Crs.Simple for both, since they are both now on flat Cartesian planes!
+const georef = new PointGeoreferencer(ctrlPtsUTM, ctrlPtsPixel, Crs.Simple, Crs.Simple);
+
+// 3. To transform a new geographic point, project it first:
+const queryLonLat = [139.75, 35.65];
+const metricQuery = ProjectionLib.wgs84ToUTM(queryLonLat[0], queryLonLat[1], zone);
+const pixelResult = georef.georefAffineWithTIN([metricQuery.x, metricQuery.y]);
+```
+
+### `ProjectionLib` API
+
+- **`ProjectionLib.getUTMZone(lon)`**: Returns the standard UTM zone (1-60).
+- **`ProjectionLib.wgs84ToUTM(lon, lat, [zone])`**: Converts WGS84 degrees to UTM meters. Returns `{ x, y, zone, isNorthernHemisphere }`.
+- **`ProjectionLib.utmToWGS84(x, y, zone, isNorthernHemisphere)`**: Converts UTM meters back to `[lon, lat]` degrees.
+
+---
+
 ## Transform Methods Comparison
 
 Benchmarked on 980 points with 20 control points (Geographic → Simple CRS):

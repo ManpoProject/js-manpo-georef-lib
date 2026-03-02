@@ -56,6 +56,104 @@ export class SingularMatrixError extends Error {
   }
 }
 
+/**
+ * @summary Lightweight Map Projection Utilities
+ * Allows converting geographic coordinates to a local flat metric Cartesian plane (UTM)
+ * to avoid affine transformation distortions at high latitudes or over large areas.
+ */
+export class ProjectionLib {
+  // WGS84 Ellipsoid constants
+  static a = 6378137.0;
+  static f = 1 / 298.257223563;
+  static b = this.a * (1 - this.f);
+  static e = Math.sqrt(1 - (this.b * this.b) / (this.a * this.a));
+  static e0 = this.e / Math.sqrt(1 - this.e * this.e);
+
+  static k0 = 0.9996; // UTM scale factor
+
+  /**
+   * @summary Determine the standard UTM zone for a given longitude
+   * @param {number} lon longitude in degrees
+   * @returns {number} UTM zone (1-60)
+   */
+  static getUTMZone (lon) {
+    return Math.floor((lon + 180) / 6) + 1;
+  }
+
+  /**
+   * @summary Converts WGS84 Longitude/Latitude to UTM Easting/Northing meters
+   * @param {number} lon longitude in degrees
+   * @param {number} lat latitude in degrees
+   * @param {number|null} [zone=null] optional forced UTM zone (calculated if null)
+   * @returns {object} { x: easting, y: northing, zone: number, isNorthernHemisphere: boolean }
+   */
+  static wgs84ToUTM (lon, lat, zone = null) {
+    zone = zone || this.getUTMZone(lon);
+    const lonOrigin = (zone - 1) * 6 - 180 + 3; // central meridian
+    const lonOriginRad = degsToRads(lonOrigin);
+    const latRad = degsToRads(lat);
+    const lonRad = degsToRads(lon);
+
+    const N = this.a / Math.sqrt(1 - this.e * this.e * Math.sin(latRad) * Math.sin(latRad));
+    const T = Math.tan(latRad) * Math.tan(latRad);
+    const C = this.e0 * this.e0 * Math.cos(latRad) * Math.cos(latRad);
+    const A = (lonRad - lonOriginRad) * Math.cos(latRad);
+
+    const M = this.a * (
+      (1 - this.e * this.e / 4 - 3 * this.e ** 4 / 64 - 5 * this.e ** 6 / 256) * latRad -
+      (3 * this.e * this.e / 8 + 3 * this.e ** 4 / 32 + 45 * this.e ** 6 / 1024) * Math.sin(2 * latRad) +
+      (15 * this.e ** 4 / 256 + 45 * this.e ** 6 / 1024) * Math.sin(4 * latRad) -
+      (35 * this.e ** 6 / 3072) * Math.sin(6 * latRad)
+    );
+
+    const easting = this.k0 * N * (A + (1 - T + C) * A * A * A / 6 + (5 - 18 * T + T * T + 72 * C - 58 * this.e0 * this.e0) * A ** 5 / 120) + 500000.0;
+
+    let northing = this.k0 * (M + N * Math.tan(latRad) * (A * A / 2 + (5 - T + 9 * C + 4 * C * C) * A ** 4 / 24 + (61 - 58 * T + T * T + 600 * C - 330 * this.e0 * this.e0) * A ** 6 / 720));
+    if (lat < 0) {
+      northing += 10000000.0; // 10 million meter offset for southern hemisphere
+    }
+
+    return { x: easting, y: northing, zone, isNorthernHemisphere: lat >= 0 };
+  }
+
+  /**
+   * @summary Converts UTM Easting/Northing meters back to WGS84 Longitude/Latitude
+   * @param {number} x UTM easting in meters
+   * @param {number} y UTM northing in meters
+   * @param {number} zone UTM zone (1-60)
+   * @param {boolean} isNorthernHemisphere true if northern, false if southern
+   * @returns {number[]} [lon, lat] in standard WGS84 degrees
+   */
+  static utmToWGS84 (x, y, zone, isNorthernHemisphere) {
+    x -= 500000.0;
+    if (!isNorthernHemisphere) {
+      y -= 10000000.0;
+    }
+
+    const lonOrigin = (zone - 1) * 6 - 180 + 3;
+    const e1 = (1 - Math.sqrt(1 - this.e * this.e)) / (1 + Math.sqrt(1 - this.e * this.e));
+
+    const M = y / this.k0;
+    const mu = M / (this.a * (1 - this.e * this.e / 4 - 3 * this.e ** 4 / 64 - 5 * this.e ** 6 / 256));
+
+    const phi1Rad = mu + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * Math.sin(2 * mu) + (21 * e1 * e1 / 16 - 55 * e1 ** 4 / 32) * Math.sin(4 * mu) + (151 * e1 ** 3 / 96) * Math.sin(6 * mu) + (1097 * e1 ** 4 / 512) * Math.sin(8 * mu);
+
+    const N1 = this.a / Math.sqrt(1 - this.e * this.e * Math.sin(phi1Rad) * Math.sin(phi1Rad));
+    const T1 = Math.tan(phi1Rad) * Math.tan(phi1Rad);
+    const C1 = this.e0 * this.e0 * Math.cos(phi1Rad) * Math.cos(phi1Rad);
+    const R1 = this.a * (1 - this.e * this.e) / Math.pow(1 - this.e * this.e * Math.sin(phi1Rad) * Math.sin(phi1Rad), 1.5);
+    const D = x / (N1 * this.k0);
+
+    let lat = phi1Rad - (N1 * Math.tan(phi1Rad) / R1) * (D * D / 2 - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * this.e0 * this.e0) * D ** 4 / 24 + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * this.e0 * this.e0 - 3 * C1 * C1) * D ** 6 / 720);
+    lat = radsToDegs(lat);
+
+    let lon = (D - (1 + 2 * T1 + C1) * D ** 3 / 6 + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * this.e0 * this.e0 + 24 * T1 * T1) * D ** 5 / 120) / Math.cos(phi1Rad);
+    lon = lonOrigin + radsToDegs(lon);
+
+    return [lon, lat];
+  }
+}
+
 export class GeometryLib {
 
   static R = 6371000 // radius of the earth
