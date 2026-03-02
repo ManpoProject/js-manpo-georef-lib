@@ -2,8 +2,11 @@
   "name": "manpo-georeflib",
   "version": "0.0.13b",
   "description": "JavaScript Library for the georeferencing functions",
-  "main": "bundle.js",
+  "main": "index.js",
   "module": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "type": "module",
   "scripts": {
     "build": "webpack",

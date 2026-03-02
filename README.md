@@ -253,10 +253,14 @@ Benchmarked on 980 points with 20 control points (Geographic → Simple CRS):
 
 ---
 
-## Building
+## Building for Browsers
+
+If you're using this library via an npm bundler (Webpack, Vite, Rollup, etc), you don't need to do anything — importing from `manpo-georeflib` automatically resolves the ES module `index.js` and lets your bundler tree-shake and optimize it.
+
+If you need a standalone `<script>` tag version for the browser:
 
 ```bash
-npm run build   # produces bundle.js (UMD, for browser use)
+npm run build   # produces dist/bundle.js (UMD format, ~300KB)
 ```
 
 ---

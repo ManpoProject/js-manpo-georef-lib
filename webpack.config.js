@@ -9,7 +9,7 @@ export default {
   entry: './index.js',
   output: {
     filename: 'bundle.js',
-    path: path.resolve(__dirname),
+    path: path.resolve(__dirname, 'dist'),
     library: {
       name: 'ManpoGeorefLib', // The name of the global variable
       type: 'umd',               // Universal Module Definition
