@@ -27,6 +27,35 @@ export class Crs extends Enumify {
   static _ = this.closeEnum()
 }
 
+/**
+ * Thrown when there are not enough control points for the requested transform.
+ * @property {number} required  minimum number of points needed
+ * @property {number} actual    number of points supplied
+ */
+export class InsufficientControlPointsError extends Error {
+  constructor (required, actual, method) {
+    super(`${method}: need at least ${required} control points, got ${actual}`)
+    this.name = 'InsufficientControlPointsError'
+    this.required = required
+    this.actual = actual
+  }
+}
+
+/**
+ * Thrown when the control-point matrix is singular or near-singular, usually
+ * because too many points are collinear or coincident.
+ * @property {string} method  name of the transform method that failed
+ * @property {string} cause   original error message from the linear solver
+ */
+export class SingularMatrixError extends Error {
+  constructor (method, cause) {
+    super(`${method}: control-point matrix is singular or near-singular (${cause})`)
+    this.name = 'SingularMatrixError'
+    this.method = method
+    this.cause = cause
+  }
+}
+
 export class GeometryLib {
 
   static R = 6371000 // radius of the earth
@@ -1012,13 +1041,7 @@ export class PointGeoreferencer {
     if (this.params.forward.poly[order] === undefined) {
       this.params.forward.poly[order] = this._calculatePolynomialCoefficients(this.ctrlPts1, this.ctrlPts2, order);
     }
-
-    const coeffs = this.params.forward.poly[order];
-    if (!coeffs) {
-      console.error(`Forward polynomial (order ${order}) coefficients could not be calculated.`);
-      return null;
-    }
-    return this._applyPolynomial(coords, order, coeffs);
+    return this._applyPolynomial(coords, order, this.params.forward.poly[order]);
   }
 
   georefTPS (coords) {
@@ -1026,13 +1049,7 @@ export class PointGeoreferencer {
     if (this.params.forward.tps === null) {
       this.params.forward.tps = this._calculateTPSCoefficients(this.ctrlPts1, this.ctrlPts2);
     }
-
-    const coeffs = this.params.forward.tps;
-    if (!coeffs) {
-      console.error("Forward TPS coefficients could not be calculated.");
-      return null;
-    }
-    return this._applyTPS(coords, coeffs, this.ctrlPts1);
+    return this._applyTPS(coords, this.params.forward.tps, this.ctrlPts1);
   }
 
   // --- INVERSE TRANSFORMATION METHODS ---
@@ -1042,13 +1059,7 @@ export class PointGeoreferencer {
     if (this.params.inverse.poly[order] === undefined) {
       this.params.inverse.poly[order] = this._calculatePolynomialCoefficients(this.ctrlPts2, this.ctrlPts1, order);
     }
-
-    const coeffs = this.params.inverse.poly[order];
-    if (!coeffs) {
-      console.error(`Inverse polynomial (order ${order}) coefficients could not be calculated.`);
-      return null;
-    }
-    return this._applyPolynomial(coords, order, coeffs);
+    return this._applyPolynomial(coords, order, this.params.inverse.poly[order]);
   }
 
   georefInverseTPS (coords) {
@@ -1056,13 +1067,7 @@ export class PointGeoreferencer {
     if (this.params.inverse.tps === null) {
       this.params.inverse.tps = this._calculateTPSCoefficients(this.ctrlPts2, this.ctrlPts1);
     }
-
-    const coeffs = this.params.inverse.tps;
-    if (!coeffs) {
-      console.error("Inverse TPS coefficients could not be calculated.");
-      return null;
-    }
-    return this._applyTPS(coords, coeffs, this.ctrlPts2);
+    return this._applyTPS(coords, this.params.inverse.tps, this.ctrlPts2);
   }
 
   // --- PRIVATE CALCULATION & APPLY METHODS (No changes here) ---
@@ -1072,8 +1077,7 @@ export class PointGeoreferencer {
     const requiredPoints = { 1: 3, 2: 6, 3: 10 };
 
     if (n < requiredPoints[order]) {
-      console.warn(`Not enough points for polynomial order ${order}. Need ${requiredPoints[order]}, have ${n}.`);
-      return false; // Return false to distinguish from null/successful calculation
+      throw new InsufficientControlPointsError(requiredPoints[order], n, `Polynomial(order=${order})`)
     }
 
     const A = [];
@@ -1094,14 +1098,13 @@ export class PointGeoreferencer {
       const lupATA = lup(ATA)
       return { x: lusolve(lupATA, ATbx).toArray().flat(), y: lusolve(lupATA, ATby).toArray().flat() };
     } catch (e) {
-      console.error(`Failed to solve for polynomial (order ${order}) coefficients:`, e.message);
-      return false;
+      throw new SingularMatrixError(`Polynomial(order=${order})`, e.message)
     }
   }
 
   _calculateTPSCoefficients (sourcePoints, targetPoints) {
     const n = sourcePoints.length;
-    if (n < 3) return false;
+    if (n < 3) throw new InsufficientControlPointsError(3, n, 'TPS')
 
     const P = sourcePoints.map(([sx, sy]) => [1, sx, sy]);
     const K = this._makeTPSKernelMatrix(sourcePoints);
@@ -1117,8 +1120,7 @@ export class PointGeoreferencer {
       const lupM = lup(M)
       return { x: lusolve(lupM, yx).toArray().flat(), y: lusolve(lupM, yy).toArray().flat() };
     } catch (e) {
-      console.error("Failed to solve for TPS coefficients:", e.message);
-      return false;
+      throw new SingularMatrixError('TPS', e.message)
     }
   }
 
