@@ -1,11 +1,14 @@
 {
   "name": "manpo-georeflib",
-  "version": "0.0.13b",
+  "version": "0.1.0",
   "description": "JavaScript Library for the georeferencing functions",
   "main": "index.js",
   "module": "index.js",
+  "unpkg": "dist/bundle.js",
+  "jsdelivr": "dist/bundle.js",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.js",
+    "./dist/bundle.js": "./dist/bundle.js"
   },
   "type": "module",
   "scripts": {

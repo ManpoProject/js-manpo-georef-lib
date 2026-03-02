@@ -38,9 +38,21 @@ All three also have **inverse** variants that transform in the opposite directio
 
 ## Installation
 
+### Via npm (recommended for bundlers)
+
 ```bash
 npm install manpo-georeflib
 ```
+
+### Via CDN (for simple `<script>` usage)
+
+You can include the pre-bundled UMD build directly in your HTML page via jsDelivr:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/manpo-georeflib@0.1.0/dist/bundle.js"></script>
+```
+
+The library will be available globally as `ManpoGeorefLib` (e.g. `new ManpoGeorefLib.PointGeoreferencer(...)`).
 
 ---
 
