@@ -993,6 +993,29 @@ export class PointGeoreferencer {
     return this;
   }
 
+  /**
+   * @private
+   * Handles the single-point / batch-point dispatch that every affine transform
+   * method needs. For a single point, calls fn(pt, extra) directly. For a batch
+   * (when pt[0] is itself an array), maps over each point and collects
+   * extra.inside values into an array on the caller's extra object.
+   *
+   * @param {number[]|number[][]} pt   single point or array of points
+   * @param {object|null}         extra  caller-supplied extra context object
+   * @param {Function}            fn   (singlePt, extraOrNull) => result
+   * @returns {number[]|number[][]}
+   */
+  _batchOrSingle (pt, extra, fn) {
+    if (!Array.isArray(pt[0])) return fn(pt, extra)
+    if (extra !== null) extra.inside = []
+    return pt.map(p => {
+      const e = extra !== null ? {} : null
+      const r = fn(p, e)
+      if (extra !== null) extra.inside.push(e.inside)
+      return r
+    })
+  }
+
   /** @private — compute and cache forward TIN (CRS1 → CRS2) data */
   _computeForwardTIN () {
     if (this.params.forward.tin) return;
@@ -1186,29 +1209,12 @@ export class PointGeoreferencer {
     if (pt === undefined || pt === null) {
       return null
     }
-    if (Array.isArray(pt[0])) {
-      let res = []
-      if (extra !== null) {
-        extra.inside = []
-        pt.forEach(p => {
-          let e = {}
-          const coord = this.georefAffineWithTriangleContains(p, e)
-          extra.inside.push(e.inside)
-          res.push(coord)
-        })
-      } else {
-        pt.forEach(p => {
-          res.push(this.georefAffineWithTriangleContains(p))
-        })
-      }
-      return res
-    }
-    const [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, this.georefTriangles1Centroids, pt, this.crs1)
-    const params = this.triangles1AffineParams[triIdx]
-    if (extra !== null) {
-      extra.inside = inside
-    }
-    return GeometryLib.affineTransformPoint(pt, params)
+    return this._batchOrSingle(pt, extra, (p, e) => {
+      const [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTriangles1, this.ctrlPts1, this.georefTriangles1Centroids, p, this.crs1)
+      const params = this.triangles1AffineParams[triIdx]
+      if (e !== null) e.inside = inside
+      return GeometryLib.affineTransformPoint(p, params)
+    })
   }
 
   /**
@@ -1225,29 +1231,12 @@ export class PointGeoreferencer {
     if (pt === undefined || pt === null) {
       return null
     }
-    if (Array.isArray(pt[0])) {
-      let res = []
-      if (extra !== null) {
-        extra.inside = []
-        pt.forEach(p => {
-          let e = {}
-          const coord = this.georefInverseAffineWithTriangleContains(p, e)
-          extra.inside.push(e.inside)
-          res.push(coord)
-        })
-      } else {
-        pt.forEach(p => {
-          res.push(this.georefInverseAffineWithTriangleContains(p))
-        })
-      }
-      return res
-    }
-    const [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, this.georefTriangles2Centroids, pt, this.crs2)
-    const params = this.triangles2AffineParams[triIdx]
-    if (extra !== null) {
-      extra.inside = inside
-    }
-    return GeometryLib.affineTransformPoint(pt, params)
+    return this._batchOrSingle(pt, extra, (p, e) => {
+      const [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTriangles2, this.ctrlPts2, this.georefTriangles2Centroids, p, this.crs2)
+      const params = this.triangles2AffineParams[triIdx]
+      if (e !== null) e.inside = inside
+      return GeometryLib.affineTransformPoint(p, params)
+    })
   }
 
   /**
@@ -1262,42 +1251,23 @@ export class PointGeoreferencer {
     if (pt === undefined || pt === null) {
       return null
     }
-    if (Array.isArray(pt[0])) {
-      let res = []
-      if (extra !== null) {
-        extra.inside = []
-        pt.forEach(p => {
-          let e = {}
-          const coord = this.georefAffineWithTIN(p, handle_exception, e)
-          extra.inside.push(e.inside)
-          res.push(coord)
-        })
-      } else {
-        pt.forEach(p => {
-          res.push(this.georefAffineWithTIN(p, handle_exception))
-        })
-      }
-      return res
-    }
-    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN1Triangles, this.georefTIN1Vertices, this.georefTIN1Centroids, pt, this.crs1)
-    const params = this.tin1AffineParams[triIdx]
-    if (params === undefined || params === null) {
-      // exception: irregular triangle almost in the same line
-      // fall down to the affine with triangle contains the point
-      if (handle_exception) {
-        return this.georefAffineWithTriangleContains(pt, extra)
-      } else {
-        if (extra !== null) {
-          extra.inside = false
+    return this._batchOrSingle(pt, extra, (p, e) => {
+      let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN1Triangles, this.georefTIN1Vertices, this.georefTIN1Centroids, p, this.crs1)
+      const params = this.tin1AffineParams[triIdx]
+      if (params === undefined || params === null) {
+        // exception: irregular triangle almost in the same line
+        // fall down to the affine with triangle contains the point
+        if (handle_exception) {
+          return this.georefAffineWithTriangleContains(p, e)
+        } else {
+          if (e !== null) e.inside = false
+          return null
         }
-        return null
+      } else {
+        if (e !== null) e.inside = inside
+        return GeometryLib.affineTransformPoint(p, params)
       }
-    } else {
-      if (extra !== null) {
-        extra.inside = inside
-      }
-      return GeometryLib.affineTransformPoint(pt, params)
-    }
+    })
   }
 
   /**
@@ -1312,41 +1282,22 @@ export class PointGeoreferencer {
     if (pt === undefined || pt === null) {
       return null
     }
-    if (Array.isArray(pt[0])) {
-      let res = []
-      if (extra !== null) {
-        extra.inside = []
-        pt.forEach(p => {
-          let e = {}
-          const coord = this.georefInverseAffineWithTIN(p, handle_exception, e)
-          extra.inside.push(e.inside)
-          res.push(coord)
-        })
-      } else {
-        pt.forEach(p => {
-          res.push(this.georefInverseAffineWithTIN(p, handle_exception))
-        })
-      }
-      return res
-    }
-    let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vertices, this.georefTIN2Centroids, pt, this.crs2)
-    const params = this.tin2AffineParams[triIdx]
-    if (params === undefined || params === null) {
-      // exception: irregular triangle almost in the same line
-      // fall down to the affine with triangle contains the point
-      if (handle_exception) {
-        return this.georefInverseAffineWithTriangleContains(pt, extra)
-      } else {
-        if (extra !== null) {
-          extra.inside = false
+    return this._batchOrSingle(pt, extra, (p, e) => {
+      let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vertices, this.georefTIN2Centroids, p, this.crs2)
+      const params = this.tin2AffineParams[triIdx]
+      if (params === undefined || params === null) {
+        // exception: irregular triangle almost in the same line
+        // fall down to the affine with triangle contains the point
+        if (handle_exception) {
+          return this.georefInverseAffineWithTriangleContains(p, e)
+        } else {
+          if (e !== null) e.inside = false
+          return null
         }
-        return null
+      } else {
+        if (e !== null) e.inside = inside
+        return GeometryLib.affineTransformPoint(p, params)
       }
-    } else {
-      if (extra !== null) {
-        extra.inside = inside
-      }
-      return GeometryLib.affineTransformPoint(pt, params)
-    }
+    })
   }
 }
