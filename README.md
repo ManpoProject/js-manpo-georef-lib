@@ -296,9 +296,9 @@ Benchmarked on 980 points with 20 control points (Geographic → Simple CRS):
 
 | Method | Notes |
 |--------|-------|
-| `georefAffineWithTIN` | Fastest for localised, well-sampled maps. ~43% faster than the pre-optimised baseline. |
-| `georefTPS` | Most accurate. ~7× faster than the pre-optimised baseline thanks to shared LU decomposition. |
-| `georefPolynomial` | Fastest to construct. Accuracy degrades with order ≥ 2 outside the control point hull. |
+| `georefAffineWithTIN` | Fastest execution for localised, well-sampled maps. |
+| `georefTPS` | Highest accuracy. Heavily optimized with shared LU matrix decomposition for fast batch processing. |
+| `georefPolynomial` | Fastest to construct upfront. Accuracy degrades with order ≥ 2 outside the control point hull. |
 
 ---
 
