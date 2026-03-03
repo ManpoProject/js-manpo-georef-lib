@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.2] — 2026-03-03
+
+### Fixed
+- Fixed an issue where `dist/bundle.js` was accidentally excluded from the NPM registry publication due to `.gitignore` rules.
+
+---
+
 ## [0.1.1] — 2026-03-02
 
 ### Added

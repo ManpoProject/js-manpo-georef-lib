@@ -49,7 +49,7 @@ npm install manpo-georeflib
 You can include the pre-bundled UMD build directly in your HTML page via jsDelivr:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/manpo-georeflib@0.1.0/dist/bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/manpo-georeflib@0.1.2/dist/bundle.js"></script>
 ```
 
 The library will be available globally as `ManpoGeorefLib` (e.g. `new ManpoGeorefLib.PointGeoreferencer(...)`).
