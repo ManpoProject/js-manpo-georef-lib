@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased] — 2026-03-02
+## [0.1.1] — 2026-03-02
+
+### Added
+- **`ProjectionLib`**: Lightweight Map Projection Utilities.
+  - Adds `wgs84ToUTM(lon, lat, zone)` and `utmToWGS84(x, y, zone, isNorthernHemisphere)` to allow users to pre-project geographic coordinates to a flat metric Cartesian plane.
+  - This provides an explicit workflow to completely avoid affine transformation rotation/shear distortions when georeferencing over high latitudes or very large map areas.
+
+---
+
+## [0.1.0] — 2026-03-02
 
 ### Added
 

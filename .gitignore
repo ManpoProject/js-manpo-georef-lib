@@ -89,7 +89,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 
 # Gatsby files
 .cache/
@@ -131,4 +130,4 @@ dist
 
 /models
 /test_data.json
-test_data.jsondist/
+test_data.json
