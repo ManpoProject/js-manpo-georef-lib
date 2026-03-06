@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.4] — 2026-03-06
+
+### Fixed
+
+- **`georefInverseAffineWithTIN` now uses the same triangle connectivity as the forward TIN.**
+  Previously, the inverse TIN ran a separate Delaunay triangulation on `ctrlPts2`, producing
+  different triangle connectivity. This caused points mapped forward via triangle A to be
+  mapped back via a different triangle B, leading to visually incorrect results (the transformed
+  point landing outside the expected triangle). The inverse TIN now reuses the forward TIN's
+  triangle indices, with centroids recomputed in `ctrlPts2` space and affine parameters
+  computed in the reverse direction.
+
+---
+
 ## [0.1.3] — 2026-03-06
 
 ### ⚠️ Breaking Change
@@ -34,15 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   public `Set<number>` fields populated by `_computeForwardTIN` / `_computeInverseTIN`
   respectively, listing the indices of flipped triangles.
 
-### Fixed
-
-- **`georefInverseAffineWithTIN` now uses the same triangle connectivity as the forward TIN.**
-  Previously, the inverse TIN ran a separate Delaunay triangulation on `ctrlPts2`, producing
-  different triangle connectivity. This caused points mapped forward via triangle A to be
-  mapped back via a different triangle B, leading to visually incorrect results (the transformed
-  point landing outside the expected triangle). The inverse TIN now reuses the forward TIN's
-  triangle indices, with centroids recomputed in `ctrlPts2` space and affine parameters
-  computed in the reverse direction.
+---
 
 ## [0.1.2] — 2026-03-03
 
