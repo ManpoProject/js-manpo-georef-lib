@@ -162,18 +162,20 @@ All methods accept either a **single point** `[x, y]` or a **batch** `[[x1,y1], 
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `georefAffineWithTIN` | `(pt, extra?)` | Affine transform using the Delaunay TIN. Most accurate for interior points. |
+| `georefAffineWithTIN` | `(pt, extra?, handle_exception?)` | Affine transform using the Delaunay TIN. Most accurate for interior points. |
 | `georefAffineWithTriangleContains` | `(pt, extra?)` | Affine using the triangle that explicitly contains the point. |
 | `georefTPS` | `(pt)` | Thin Plate Spline interpolation. Exact at control points. |
 | `georefPolynomial` | `(pt, order?)` | Polynomial regression. `order` ∈ {1, 2, 3}, default 1. |
 
-`extra` is an optional object; after the call `extra.inside` is set to `true|false` indicating whether the point was inside the TIN.
+`extra` is an optional object. After the call:
+- `extra.inside` — `true` if the point was inside the TIN, `false` if extrapolated.
+- `extra.flippedTriangle` — `true` if the chosen triangle has an orientation flip between the two coordinate systems (i.e., the local affine mapping is a reflection). The result is still geometrically correct but the area may be geometrically distorted.
 
 #### Inverse transform methods (CRS 2 → CRS 1)
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `georefInverseAffineWithTIN` | `(pt, extra?)` | Inverse affine using the TIN. |
+| `georefInverseAffineWithTIN` | `(pt, extra?, handle_exception?)` | Inverse affine using the TIN. |
 | `georefInverseAffineWithTriangleContains` | `(pt, extra?)` | Inverse affine using containing triangle. |
 | `georefInverseTPS` | `(pt)` | Inverse TPS. |
 | `georefInversePolynomial` | `(pt, order?)` | Inverse polynomial regression. |
@@ -183,10 +185,15 @@ All methods accept either a **single point** `[x, y]` or a **batch** `[[x1,y1], 
 ```js
 const extra = {}
 const result = georef.georefAffineWithTIN([140.13, 39.71], extra)
-if (extra.inside) {
-  console.log('Transformed (inside TIN):', result)
-} else {
+if (!extra.inside) {
   console.log('Extrapolated (outside TIN):', result)
+} else if (extra.flippedTriangle) {
+  // The point is inside the TIN but lies in a triangle whose local affine
+  // mapping is a reflection (orientation flip between the two CRS).
+  // The coordinates are still correct, but consider this a lower-confidence result.
+  console.log('Inside TIN (flipped triangle):', result)
+} else {
+  console.log('Inside TIN:', result)
 }
 ```
 

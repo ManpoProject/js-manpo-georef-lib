@@ -993,6 +993,29 @@ export class GeometryLib {
   }
 
   /**
+   * @summary Return the set of triangle indices where the affine mapping flips orientation.
+   * A triangle is considered "flipped" when its signed area in `vertices1` (the TIN source space)
+   * has the opposite sign to its signed area in `vertices2` (the target control points).
+   * This indicates the local affine transform is a reflection (determinant < 0).
+   * @param {number[][]} triangles  index triples, e.g. [[i,j,k], ...]
+   * @param {number[][]} vertices1  source coordinates (same indexing as triangles)
+   * @param {number[][]} vertices2  target control points (same indexing as triangles)
+   * @returns {Set<number>} set of triangle indices that are flipped
+   */
+  static flippedTriangleIndices (triangles, vertices1, vertices2) {
+    const flipped = new Set()
+    for (let i = 0; i < triangles.length; i++) {
+      const tri = triangles[i]
+      const [ax1, ay1] = vertices1[tri[0]], [bx1, by1] = vertices1[tri[1]], [cx1, cy1] = vertices1[tri[2]]
+      const [ax2, ay2] = vertices2[tri[0]], [bx2, by2] = vertices2[tri[1]], [cx2, cy2] = vertices2[tri[2]]
+      const sign1 = (bx1 - ax1) * (cy1 - ay1) - (cx1 - ax1) * (by1 - ay1)
+      const sign2 = (bx2 - ax2) * (cy2 - ay2) - (cx2 - ax2) * (by2 - ay2)
+      if ((sign1 > 0) !== (sign2 > 0)) flipped.add(i)
+    }
+    return flipped
+  }
+
+  /**
    * @summary Check if the point p is inside the triangle abc
    * @param {number[]} a vertex of the triangle [x1, y1]
    * @param {number[]} b vertex of the triangle [x2, y2]
@@ -1054,12 +1077,16 @@ export class PointGeoreferencer {
     this.georefTIN1Triangles = null;
     this.georefTIN1Centroids = null;
     this.tin1AffineParams = null;
+    /** @type {Set<number>} indices of forward TIN triangles whose affine transform flips orientation */
+    this.georefTIN1FlippedIndices = null;
 
     this.georefTIN2 = null;
     this.georefTIN2Vertices = null;
     this.georefTIN2Triangles = null;
     this.georefTIN2Centroids = null;
     this.tin2AffineParams = null;
+    /** @type {Set<number>} indices of inverse TIN triangles whose affine transform flips orientation */
+    this.georefTIN2FlippedIndices = null;
 
     // Triangle-contains data fields (populated lazily, only when tinOnly !== true)
     this.georefTriangles1 = null;
@@ -1122,6 +1149,10 @@ export class PointGeoreferencer {
     this.georefTIN1Triangles = GeometryLib.trianglesInTIN(this.georefTIN1);
     this.georefTIN1Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN1Triangles, this.georefTIN1Vertices);
     this.tin1AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN1, this.ctrlPts2);
+    // Detect triangles where the affine mapping flips orientation (signed area changes sign)
+    this.georefTIN1FlippedIndices = GeometryLib.flippedTriangleIndices(
+      this.georefTIN1Triangles, this.georefTIN1Vertices, this.ctrlPts2
+    );
     this.params.forward.tin = true;
   }
 
@@ -1133,6 +1164,10 @@ export class PointGeoreferencer {
     this.georefTIN2Triangles = GeometryLib.trianglesInTIN(this.georefTIN2);
     this.georefTIN2Centroids = GeometryLib.centroidsOfTriangles(this.georefTIN2Triangles, this.georefTIN2Vertices);
     this.tin2AffineParams = GeometryLib.affineParamsOfTIN(this.georefTIN2, this.ctrlPts1);
+    // Detect triangles where the affine mapping flips orientation (signed area changes sign)
+    this.georefTIN2FlippedIndices = GeometryLib.flippedTriangleIndices(
+      this.georefTIN2Triangles, this.georefTIN2Vertices, this.ctrlPts1
+    );
     this.params.inverse.tin = true;
   }
 
@@ -1340,11 +1375,14 @@ export class PointGeoreferencer {
   /**
    * @summary geo-reference the geographic point or points from coordinate system 1 to coordinate system 2 with affine transform based on TIN
    * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
-   * @param {boolean} handle_exception if true, use the nearest triangle (not the ones in TIN) if no TIN triangle is available
-   * @param {object|null} [extra=null] extra parameters
+   * @param {object|null} [extra=null] extra output object.
+   *   On return, `extra.inside` is `true` if the point is inside the TIN, `false` if extrapolated.
+   *   `extra.flippedTriangle` is `true` if the chosen triangle has an orientation flip between the two CRS
+   *   (i.e., the affine mapping is a reflection). The result is still geometrically correct.
+   * @param {boolean} [handle_exception=true] if true, fall back to the nearest triangle when no TIN triangle contains the point
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefAffineWithTIN (pt, handle_exception = true, extra = null) {
+  georefAffineWithTIN (pt, extra = null, handle_exception = true) {
     this._computeForwardTIN()
     if (pt === undefined || pt === null) {
       return null
@@ -1358,11 +1396,14 @@ export class PointGeoreferencer {
         if (handle_exception) {
           return this.georefAffineWithTriangleContains(p, e)
         } else {
-          if (e !== null) e.inside = false
+          if (e !== null) { e.inside = false; e.flippedTriangle = false; }
           return null
         }
       } else {
-        if (e !== null) e.inside = inside
+        if (e !== null) {
+          e.inside = inside
+          e.flippedTriangle = inside && this.georefTIN1FlippedIndices !== null && this.georefTIN1FlippedIndices.has(triIdx)
+        }
         return GeometryLib.affineTransformPoint(p, params)
       }
     })
@@ -1371,11 +1412,13 @@ export class PointGeoreferencer {
   /**
    * @summary geo-reference the geographic point or points from coordinate system 2 to coordinate system 1 with affine transform based on TIN
    * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
-   * @param {boolean} handle_exception if true, use the nearest triangle (not the ones in TIN) if no TIN triangle is available
-   * @param {object|null} [extra=null] extra parameters
+   * @param {object|null} [extra=null] extra output object.
+   *   On return, `extra.inside` is `true` if the point is inside the TIN, `false` if extrapolated.
+   *   `extra.flippedTriangle` is `true` if the chosen triangle has an orientation flip between the two CRS.
+   * @param {boolean} [handle_exception=true] if true, fall back to the nearest triangle when no TIN triangle contains the point
    * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
    */
-  georefInverseAffineWithTIN (pt, handle_exception = true, extra = null) {
+  georefInverseAffineWithTIN (pt, extra = null, handle_exception = true) {
     this._computeInverseTIN()
     if (pt === undefined || pt === null) {
       return null
@@ -1389,11 +1432,14 @@ export class PointGeoreferencer {
         if (handle_exception) {
           return this.georefInverseAffineWithTriangleContains(p, e)
         } else {
-          if (e !== null) e.inside = false
+          if (e !== null) { e.inside = false; e.flippedTriangle = false; }
           return null
         }
       } else {
-        if (e !== null) e.inside = inside
+        if (e !== null) {
+          e.inside = inside
+          e.flippedTriangle = inside && this.georefTIN2FlippedIndices !== null && this.georefTIN2FlippedIndices.has(triIdx)
+        }
         return GeometryLib.affineTransformPoint(p, params)
       }
     })
