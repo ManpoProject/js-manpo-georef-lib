@@ -57,6 +57,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   coordinate arrays, now done inline), ships with a committed fixture, carries real assertions
   instead of `console.log` output, and accepts a data path argument for real datasets.
 
+- **The published package no longer ships the test suite.** With no `files` field, every test
+  file, the fixture, the benchmark and the build config were included — 16 files, 485 kB unpacked.
+  The package now carries only `index.js`, `dist/`, and the docs: 8 files, 406 kB.
+
 - **`dist/bundle.js.LICENSE.txt` is now tracked.** The committed bundle has referenced it via
   `/*! For license information please see bundle.js.LICENSE.txt */` since v0.1.1, but the file was
   never committed, so the reference 404'd on unpkg/jsDelivr and the bundled MIT attribution for

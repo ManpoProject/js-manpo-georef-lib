@@ -10,6 +10,12 @@
     ".": "./index.js",
     "./dist/bundle.js": "./dist/bundle.js"
   },
+  "files": [
+    "index.js",
+    "dist/",
+    "ARCHITECTURE.md",
+    "CHANGELOG.md"
+  ],
   "type": "module",
   "scripts": {
     "build": "webpack",
