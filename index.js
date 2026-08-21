@@ -1016,6 +1016,32 @@ export class GeometryLib {
   }
 
   /**
+   * @summary Indices of triangles whose orientation disagrees with the majority.
+   *
+   * A *global* handedness difference between the two coordinate systems — the
+   * normal case when CRS 2 is image/pixel space, whose y axis points down —
+   * flips the signed area of EVERY triangle. That is not distortion, and the
+   * whole TIN must not be treated as suspect because of it. What actually
+   * signals a degenerate or self-overlapping cell is a triangle that disagrees
+   * with the majority of its neighbours, so only that minority is returned.
+   *
+   * @param {Set<number>} flippedIndices output of {@link GeometryLib.flippedTriangleIndices}
+   * @param {number} triangleCount total number of triangles in the TIN
+   * @returns {Set<number>} indices of the minority-orientation triangles
+   */
+  static orientationOutlierIndices (flippedIndices, triangleCount) {
+    const outliers = new Set()
+    if (!flippedIndices || triangleCount <= 0) return outliers
+    // A tie counts as "majority not flipped", which is the conservative choice:
+    // more points are routed to the smooth fallback rather than fewer.
+    const majorityIsFlipped = flippedIndices.size * 2 > triangleCount
+    for (let i = 0; i < triangleCount; i++) {
+      if (flippedIndices.has(i) !== majorityIsFlipped) outliers.add(i)
+    }
+    return outliers
+  }
+
+  /**
    * @summary Check if the point p is inside the triangle abc
    * @param {number[]} a vertex of the triangle [x1, y1]
    * @param {number[]} b vertex of the triangle [x2, y2]
@@ -1132,13 +1158,22 @@ export class PointGeoreferencer {
    */
   _batchOrSingle (pt, extra, fn) {
     if (!Array.isArray(pt[0])) return fn(pt, extra)
-    if (extra !== null) extra.inside = []
-    return pt.map(p => {
-      const e = extra !== null ? {} : null
+    if (extra === null) return pt.map(p => fn(p, null))
+
+    // Batch mode: collect each point's metadata, then expose one parallel
+    // array per key. `inside` is always present, even if a code path in `fn`
+    // left it unset, so all arrays stay aligned with the input points.
+    const perPoint = []
+    const results = pt.map(p => {
+      const e = {}
       const r = fn(p, e)
-      if (extra !== null) extra.inside.push(e.inside)
+      perPoint.push(e)
       return r
     })
+    const keys = new Set(['inside'])
+    for (const e of perPoint) for (const k of Object.keys(e)) keys.add(k)
+    for (const k of keys) extra[k] = perPoint.map(e => e[k])
+    return results
   }
 
   /** @private — compute and cache forward TIN (CRS1 → CRS2) data */
@@ -1152,6 +1187,12 @@ export class PointGeoreferencer {
     // Detect triangles where the affine mapping flips orientation (signed area changes sign)
     this.georefTIN1FlippedIndices = GeometryLib.flippedTriangleIndices(
       this.georefTIN1Triangles, this.georefTIN1Vertices, this.ctrlPts2
+    );
+    // Triangles that disagree with the majority orientation — see
+    // GeometryLib.orientationOutlierIndices for why this is not the same as
+    // the flipped set whenever the two CRS differ in handedness.
+    this.georefTIN1OrientationOutliers = GeometryLib.orientationOutlierIndices(
+      this.georefTIN1FlippedIndices, this.georefTIN1Triangles.length
     );
     this.params.forward.tin = true;
   }
@@ -1183,6 +1224,7 @@ export class PointGeoreferencer {
     );
     // Flipped indices are the same as forward (same triangles, same vertex pairs).
     this.georefTIN2FlippedIndices = this.georefTIN1FlippedIndices;
+    this.georefTIN2OrientationOutliers = this.georefTIN1OrientationOutliers;
     this.params.inverse.tin = true;
   }
 
@@ -1411,16 +1453,64 @@ export class PointGeoreferencer {
         if (handle_exception) {
           return this.georefAffineWithTriangleContains(p, e)
         } else {
-          if (e !== null) { e.inside = false; e.flippedTriangle = false; }
+          if (e !== null) { e.inside = false; e.flippedTriangle = false; e.orientationOutlier = false; }
           return null
         }
       } else {
         if (e !== null) {
           e.inside = inside
           e.flippedTriangle = inside && this.georefTIN1FlippedIndices !== null && this.georefTIN1FlippedIndices.has(triIdx)
+          e.orientationOutlier = inside && this.georefTIN1OrientationOutliers !== null && this.georefTIN1OrientationOutliers !== undefined && this.georefTIN1OrientationOutliers.has(triIdx)
         }
         return GeometryLib.affineTransformPoint(p, params)
       }
+    })
+  }
+
+  /**
+   * @summary geo-reference from coordinate system 1 to coordinate system 2 with affine transform based on TIN,
+   *   automatically falling back to TPS where the TIN result is unreliable.
+   *
+   * Outside the convex hull the TIN has no containing triangle, so it borrows the affine frame of the
+   * nearest one and extrapolates along it. That frame is fitted to a small local patch and says nothing
+   * about the map beyond it, so the error grows quickly with distance. TPS extrapolates smoothly and
+   * globally instead, and is used whenever the query point falls outside the TIN.
+   *
+   * Inside the TIN the affine result is always kept, including in triangles whose orientation is
+   * flipped. An affine map preserves barycentric coordinates, so a point inside a source triangle
+   * always lands inside the corresponding target triangle — a flip changes the orientation, not that
+   * containment. A flip means the control points themselves describe a fold, which TPS cannot undo
+   * either: it interpolates the same control points and folds too, just smoothly. Falling back there
+   * would trade away the TIN's locality and exactness for no gain, so instead the condition is merely
+   * reported through `extra.orientationOutlier` as a hint that a correspondence may be mismatched.
+   *
+   * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
+   * @param {object|null} [extra=null] extra output object.
+   *   On return, `extra.inside` and `extra.flippedTriangle` are as in {@link PointGeoreferencer#georefAffineWithTIN},
+   *   and `extra.usedFallbackTPS` is `true` if TPS produced the result. For a batch input each is an array
+   *   parallel to `pt`.
+   * @param {boolean} [handle_exception=false] passed through to {@link PointGeoreferencer#georefAffineWithTIN}.
+   *   Defaults to `false` so that a degenerate triangle falls through to TPS rather than to the
+   *   nearest-containing-triangle affine.
+   * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
+   * @throws {InsufficientControlPointsError|SingularMatrixError} if the fallback is needed but TPS cannot be fitted
+   */
+  georefAffineWithTINFallbackTPS (pt, extra = null, handle_exception = false) {
+    this._computeForwardTIN()
+    if (pt === undefined || pt === null) {
+      return null
+    }
+    return this._batchOrSingle(pt, extra, (p, e) => {
+      // A local object is needed even when the caller did not ask for `extra`,
+      // since the fallback decision is driven by that metadata.
+      const meta = e !== null ? e : {}
+      const result = this.georefAffineWithTIN(p, meta, handle_exception)
+      if (result === null || meta.inside !== true) {
+        if (e !== null) e.usedFallbackTPS = true
+        return this.georefTPS(p)
+      }
+      if (e !== null) e.usedFallbackTPS = false
+      return result
     })
   }
 
@@ -1447,16 +1537,51 @@ export class PointGeoreferencer {
         if (handle_exception) {
           return this.georefInverseAffineWithTriangleContains(p, e)
         } else {
-          if (e !== null) { e.inside = false; e.flippedTriangle = false; }
+          if (e !== null) { e.inside = false; e.flippedTriangle = false; e.orientationOutlier = false; }
           return null
         }
       } else {
         if (e !== null) {
           e.inside = inside
           e.flippedTriangle = inside && this.georefTIN2FlippedIndices !== null && this.georefTIN2FlippedIndices.has(triIdx)
+          e.orientationOutlier = inside && this.georefTIN2OrientationOutliers !== null && this.georefTIN2OrientationOutliers !== undefined && this.georefTIN2OrientationOutliers.has(triIdx)
         }
         return GeometryLib.affineTransformPoint(p, params)
       }
+    })
+  }
+
+  /**
+   * @summary geo-reference from coordinate system 2 to coordinate system 1 with affine transform based on TIN,
+   *   automatically falling back to inverse TPS where the TIN result is unreliable.
+   *
+   * Inverse counterpart of {@link PointGeoreferencer#georefAffineWithTINFallbackTPS}.
+   *
+   * @param {number[][]|number[]} pt the coordinates to be transformed, e.g., [[lon, lat], ...] or [lon, lat]
+   * @param {object|null} [extra=null] extra output object.
+   *   On return, `extra.inside` and `extra.flippedTriangle` are as in {@link PointGeoreferencer#georefInverseAffineWithTIN},
+   *   and `extra.usedFallbackTPS` is `true` if inverse TPS produced the result. For a batch input each is an array
+   *   parallel to `pt`.
+   * @param {boolean} [handle_exception=false] passed through to {@link PointGeoreferencer#georefInverseAffineWithTIN}.
+   *   Defaults to `false` so that a degenerate triangle falls through to TPS rather than to the
+   *   nearest-containing-triangle affine.
+   * @returns {number[][]|number[]} the transformed coordinates, e.g., [[x, y], ...] or [x, y]
+   * @throws {InsufficientControlPointsError|SingularMatrixError} if the fallback is needed but TPS cannot be fitted
+   */
+  georefInverseAffineWithTINFallbackTPS (pt, extra = null, handle_exception = false) {
+    this._computeInverseTIN()
+    if (pt === undefined || pt === null) {
+      return null
+    }
+    return this._batchOrSingle(pt, extra, (p, e) => {
+      const meta = e !== null ? e : {}
+      const result = this.georefInverseAffineWithTIN(p, meta, handle_exception)
+      if (result === null || meta.inside !== true) {
+        if (e !== null) e.usedFallbackTPS = true
+        return this.georefInverseTPS(p)
+      }
+      if (e !== null) e.usedFallbackTPS = false
+      return result
     })
   }
 }

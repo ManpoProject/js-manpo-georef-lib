@@ -1,6 +1,6 @@
 {
   "name": "manpo-georeflib",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "JavaScript Library for the georeferencing functions",
   "main": "index.js",
   "module": "index.js",
@@ -13,7 +13,7 @@
   "type": "module",
   "scripts": {
     "build": "webpack",
-    "test": "node test-georeflib.js"
+    "test": "node test-fixes.js && node test-tin-fallback-tps.js && node test-georeflib.js && node test-projection.js"
   },
   "repository": {
     "type": "git",

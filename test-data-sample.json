@@ -1,0 +1,402 @@
+{
+  "maps": [
+    {
+      "name": "akita-modern",
+      "coordinateSystem": "latlng",
+      "points": [
+        {
+          "id": "geo-01",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.07,
+            "lat": 39.67
+          }
+        },
+        {
+          "id": "geo-02",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.13,
+            "lat": 39.71
+          }
+        },
+        {
+          "id": "geo-03",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.19,
+            "lat": 39.68
+          }
+        },
+        {
+          "id": "geo-04",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.25,
+            "lat": 39.73
+          }
+        },
+        {
+          "id": "geo-05",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.09,
+            "lat": 39.78
+          }
+        },
+        {
+          "id": "geo-06",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.16,
+            "lat": 39.82
+          }
+        },
+        {
+          "id": "geo-07",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.23,
+            "lat": 39.79
+          }
+        },
+        {
+          "id": "geo-08",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.28,
+            "lat": 39.85
+          }
+        },
+        {
+          "id": "geo-09",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.11,
+            "lat": 39.88
+          }
+        },
+        {
+          "id": "geo-10",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.21,
+            "lat": 39.9
+          }
+        },
+        {
+          "id": "geo-11",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.06,
+            "lat": 39.75
+          }
+        },
+        {
+          "id": "geo-12",
+          "mapName": "akita-modern",
+          "type": "latlng",
+          "coordinates": {
+            "lng": 140.3,
+            "lat": 39.7
+          }
+        }
+      ]
+    },
+    {
+      "name": "akita-1888-scan",
+      "coordinateSystem": "xy",
+      "points": [
+        {
+          "id": "pix-01",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 260.23,
+            "y": 1592.94
+          }
+        },
+        {
+          "id": "pix-02",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 674.68,
+            "y": 1334.24
+          }
+        },
+        {
+          "id": "pix-03",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 1064.65,
+            "y": 1516.11
+          }
+        },
+        {
+          "id": "pix-04",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 1484.06,
+            "y": 1183.32
+          }
+        },
+        {
+          "id": "pix-05",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 428.42,
+            "y": 893.88
+          }
+        },
+        {
+          "id": "pix-06",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 907.79,
+            "y": 629.3
+          }
+        },
+        {
+          "id": "pix-07",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 1369.76,
+            "y": 804.7
+          }
+        },
+        {
+          "id": "pix-08",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 1720.46,
+            "y": 406.02
+          }
+        },
+        {
+          "id": "pix-09",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 581.7,
+            "y": 256.38
+          }
+        },
+        {
+          "id": "pix-10",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 1257.07,
+            "y": 107.17
+          }
+        },
+        {
+          "id": "pix-11",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 219.15,
+            "y": 1086.27
+          }
+        },
+        {
+          "id": "pix-12",
+          "mapName": "akita-1888-scan",
+          "type": "xy",
+          "coordinates": {
+            "x": 1806.91,
+            "y": 1361.95
+          }
+        }
+      ]
+    }
+  ],
+  "correspondences": [
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-01",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-01",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-02",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-02",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-03",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-03",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-04",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-04",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-05",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-05",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-06",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-06",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-07",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-07",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-08",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-08",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-09",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-09",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-10",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-10",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-11",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-11",
+          "index": 1
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "mapName": "akita-modern",
+          "id": "geo-12",
+          "index": 0
+        },
+        {
+          "mapName": "akita-1888-scan",
+          "id": "pix-12",
+          "index": 1
+        }
+      ]
+    }
+  ]
+}

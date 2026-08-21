@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.5] — 2026-08-21
+
+### Added
+
+- **`georefAffineWithTINFallbackTPS` and `georefInverseAffineWithTINFallbackTPS`.**
+  Hybrid transforms that use the TIN affine inside the control point hull and fall back to
+  Thin Plate Spline when the query point is outside the TIN or lands in a flipped triangle.
+  TIN extrapolation inherits the affine parameters of a single edge triangle, which for sliver
+  or orientation-flipped triangles can throw the result off by a large margin; TPS extrapolates
+  smoothly and globally. Both accept single points and batches, and report the decision per
+  point via `extra.usedFallbackTPS`.
+
+  `handle_exception` defaults to `false` on these methods (rather than `true` as on
+  `georefAffineWithTIN`), so a degenerate triangle also routes to TPS instead of to the
+  nearest-containing-triangle affine.
+
+- **Batch `extra` now reports every metadata key**, not just `inside`. `extra.flippedTriangle`
+  and `extra.usedFallbackTPS` are returned as arrays parallel to the input points, matching the
+  existing behaviour of `extra.inside`. Single-point behaviour is unchanged.
+
+- **`extra.orientationOutlier`** on `georefAffineWithTIN` / `georefInverseAffineWithTIN` and the new
+  fallback methods. `true` when a triangle's orientation disagrees with the majority of the TIN.
+
+- **New test suites.** `test-tin-fallback-tps.js` (52 assertions) covers fallback routing, batch
+  semantics, the `extra` metadata contract, global-handedness handling, and backward compatibility
+  of the existing batch `extra.inside` array. `test-data-sample.json` was added as a committed
+  fixture for the end-to-end suite.
+
+### Fixed
+
+- **The TPS fallback triggers on containment alone**, not on triangle orientation. Two earlier
+  designs were wrong here. Keying it off `extra.flippedTriangle` diverted **100%** of interior
+  points to TPS for any geographic → pixel map, because a downward pixel y axis flips every
+  triangle (measured: 15/15 triangles flagged, 415/415 interior queries diverted) — the local TIN
+  accuracy the method exists to provide was silently discarded. Keying it off orientation at all is
+  also unnecessary: an affine map preserves barycentric coordinates, so a point inside a source
+  triangle always lands inside the corresponding target triangle, flipped or not. A flip means the
+  control points describe a fold, and TPS interpolates the same control points, so it folds too —
+  falling back trades away the TIN's locality and exactness for no gain.
+
+  The rule is now simply: inside the TIN → affine; outside → TPS; no usable affine params
+  (degenerate triangle) → TPS.
+
+  `extra.flippedTriangle` keeps its original v0.1.3 meaning and is unchanged.
+
+- **`npm test` now runs.** It previously pointed only at `test-georeflib.js`, which imported
+  `test_data.json` and `./models/*` — neither present in the repository — so the script always
+  failed. That file is now self-contained (the `models/` classes only reshaped JSON into two
+  coordinate arrays, now done inline), ships with a committed fixture, carries real assertions
+  instead of `console.log` output, and accepts a data path argument for real datasets.
+
+- **`dist/bundle.js.LICENSE.txt` is now tracked.** The committed bundle has referenced it via
+  `/*! For license information please see bundle.js.LICENSE.txt */` since v0.1.1, but the file was
+  never committed, so the reference 404'd on unpkg/jsDelivr and the bundled MIT attribution for
+  decimal.js was missing from the distribution.
+
+---
+
 ## [0.1.4] — 2026-03-06
 
 ### Fixed

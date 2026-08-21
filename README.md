@@ -162,6 +162,7 @@ All methods accept either a **single point** `[x, y]` or a **batch** `[[x1,y1], 
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
+| `georefAffineWithTINFallbackTPS` | `(pt, extra?, handle_exception?)` | **(Recommended)** Affine using the TIN inside the control point hull, falling back to TPS for points outside it. Best balance of local accuracy and safe extrapolation. |
 | `georefAffineWithTIN` | `(pt, extra?, handle_exception?)` | Affine transform using the Delaunay TIN. Most accurate for interior points. |
 | `georefAffineWithTriangleContains` | `(pt, extra?)` | Affine using the triangle that explicitly contains the point. |
 | `georefTPS` | `(pt)` | Thin Plate Spline interpolation. Exact at control points. |
@@ -169,12 +170,17 @@ All methods accept either a **single point** `[x, y]` or a **batch** `[[x1,y1], 
 
 `extra` is an optional object. After the call:
 - `extra.inside` — `true` if the point was inside the TIN, `false` if extrapolated.
-- `extra.flippedTriangle` — `true` if the chosen triangle has an orientation flip between the two coordinate systems (i.e., the local affine mapping is a reflection). The result is still geometrically correct but the area may be geometrically distorted.
+- `extra.flippedTriangle` — `true` if the chosen triangle has an orientation flip between the two coordinate systems (i.e., the local affine mapping is a reflection). The result is still geometrically correct but the area may be geometrically distorted. **Note:** when CRS 2 is pixel space, whose y axis points down, *every* triangle is flipped — that is a property of the two coordinate systems, not a defect. Use `orientationOutlier` to find genuinely suspect triangles.
+- `extra.orientationOutlier` — `true` if the chosen triangle's orientation disagrees with the *majority* of the TIN. Unlike `flippedTriangle`, this ignores a global handedness difference between the two coordinate systems, so it stays `false` for a normal geographic → pixel map. It is a **diagnostic only** and does not change the result: a handful of outliers almost always means a correspondence was entered the wrong way round, and this points you at where.
+- `extra.usedFallbackTPS` — set by the `...FallbackTPS` methods only. `true` if the calculation was diverted to Thin Plate Spline because the point fell outside the TIN.
+
+For a **batch** input, each of these is an **array parallel to `pt`** rather than a single value.
 
 #### Inverse transform methods (CRS 2 → CRS 1)
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
+| `georefInverseAffineWithTINFallbackTPS` | `(pt, extra?, handle_exception?)` | **(Recommended)** Inverse affine using the TIN, with safe fallback to inverse TPS for points outside the hull. |
 | `georefInverseAffineWithTIN` | `(pt, extra?, handle_exception?)` | Inverse affine using the TIN. |
 | `georefInverseAffineWithTriangleContains` | `(pt, extra?)` | Inverse affine using containing triangle. |
 | `georefInverseTPS` | `(pt)` | Inverse TPS. |
@@ -195,6 +201,30 @@ if (!extra.inside) {
 } else {
   console.log('Inside TIN:', result)
 }
+```
+
+#### Example — automatic TPS fallback
+
+```js
+const extra = {}
+// Safely transform a point, diverting to TPS for edge cases
+const result = georef.georefAffineWithTINFallbackTPS([140.13, 39.71], extra)
+
+if (extra.usedFallbackTPS) {
+  console.log('Point evaluated via global TPS fallback:', result)
+} else {
+  console.log('Point evaluated via precise local TIN:', result)
+}
+```
+
+Points inside the hull always keep the affine result, including inside a flipped triangle. An affine map preserves barycentric coordinates, so a point inside a source triangle always lands inside the corresponding target triangle — a flip changes the orientation, not that containment. A flip means the control points themselves describe a fold, and TPS interpolates those same control points, so it folds too; falling back there would give up the TIN's locality and exactness for nothing. Use `extra.orientationOutlier` to find and fix the offending correspondence instead.
+
+It works on a batch too, deciding per point:
+
+```js
+const extra = {}
+const results = georef.georefAffineWithTINFallbackTPS([[140.13, 39.71], [0, 0]], extra)
+// extra.usedFallbackTPS -> e.g. [false, true], one flag per input point
 ```
 
 ---
@@ -303,7 +333,8 @@ Benchmarked on 980 points with 20 control points (Geographic → Simple CRS):
 
 | Method | Notes |
 |--------|-------|
-| `georefAffineWithTIN` | Fastest execution for localised, well-sampled maps. |
+| `georefAffineWithTINFallbackTPS` | Recommended default. TIN speed and accuracy inside the control point hull, TPS smoothness outside it. |
+| `georefAffineWithTIN` | Fastest execution for localised, well-sampled maps. Linear extrapolation outside the hull can be extreme. |
 | `georefTPS` | Highest accuracy. Heavily optimized with shared LU matrix decomposition for fast batch processing. |
 | `georefPolynomial` | Fastest to construct upfront. Accuracy degrades with order ≥ 2 outside the control point hull. |
 
@@ -324,5 +355,20 @@ npm run build   # produces dist/bundle.js (UMD format, ~300KB)
 ## Testing
 
 ```bash
-node --test test-fixes.js test-georeflib.js
+npm test
+```
+
+This runs the three self-contained suites:
+
+| File | Covers |
+|------|--------|
+| `test-fixes.js` | `GeometryLib` regression tests (segment distance, similar points, triangle lookup, …) |
+| `test-tin-fallback-tps.js` | `georefAffineWithTINFallbackTPS` / `georefInverseAffineWithTINFallbackTPS` — routing, batch semantics, the `extra` metadata contract, and global-handedness handling |
+| `test-georeflib.js` | End-to-end across every transform family, driven by `test-data-sample.json` |
+| `test-projection.js` | `ProjectionLib` UTM round-trips (`node:test`) |
+
+To run the end-to-end suite against your own control points, pass a data file in the same map/correspondence JSON format:
+
+```bash
+node test-georeflib.js ./my_control_points.json
 ```

@@ -32,6 +32,16 @@ If a point evaluates to be completely outside the Delaunay triangular mesh struc
 
 *(Depending on the Map CRS flag, the distance computation natively selects Euclidean metrics or employs the `geographiclib-geodesic` implementation to accurately measure Earth's curvature when scanning distances).*
 
+### TPS Fallback for Extrapolation
+
+Reusing a single edge triangle's affine frame is only a reasonable approximation close to the hull. Far outside it — or when that edge triangle is a sliver, or its mapping flips orientation between the two CRS — the linear extrapolation compounds the triangle's local distortion and the result can diverge sharply.
+
+`georefAffineWithTINFallbackTPS` (and its inverse) therefore delegate to Thin Plate Spline whenever the query point falls outside the TIN, and keep the affine result whenever it falls inside.
+
+Orientation deliberately plays no part in that decision. An affine map preserves barycentric coordinates, so a point inside a source triangle always lands inside the corresponding target triangle; a flip changes the orientation of the cell, not the containment of the point. What a flip does mean is that the control points themselves describe a fold, and TPS is no cure for that — it interpolates the same control points and folds as well, merely smoothly. Falling back there would surrender the TIN's locality and its exactness at the control points in exchange for nothing.
+
+Orientation is still measured, but only as a diagnostic, and the naive measurement is misleading. Comparing a triangle's signed area between the two CRS detects a reflection, but when CRS 2 is image space — whose y axis points down — the reflection is global: **every** triangle changes sign, which is ordinary. Reporting that would drown the signal in noise. The library therefore compares each triangle against the *majority* orientation of the TIN and reports only the dissenting minority through `extra.orientationOutlier`, which is almost always the fingerprint of a correspondence entered the wrong way round. TPS is fitted globally over all control points, so it degrades smoothly rather than inheriting one triangle's geometry. Inside a well-formed triangle the TIN path is kept unchanged, preserving its local accuracy. The decision is made per point, so a batch may mix both.
+
 ---
 
 ## 2. Assured Reciprocity in Inverse TIN
