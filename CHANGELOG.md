@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.6] — 2026-08-21
+
+### Fixed
+
+- **The inverse TIN lookup no longer returns a folded-over triangle when a sound one
+  contains the point.** Triangles cannot overlap in the space they were triangulated in, but
+  the *image* of a TIN can fold over itself, and the inverse direction searches that image.
+  Where control points describe a fold, a target coordinate can sit inside several triangles
+  at once. `GeometryLib.georefTriangleForPoint` returned whichever it reached first by
+  centroid distance, which on a folded fixture was an orientation-flipped cell 275 times out
+  of 534 — in every one of those cases an unflipped triangle contained the point too.
+  It now defers a flipped candidate until the search has established that no unflipped one
+  contains the point, and `georefInverseAffineWithTIN` supplies the flipped set so the
+  inverse direction benefits. The forward direction deliberately does not: its triangles are
+  a Delaunay tessellation of CRS 1 and cannot overlap, so there is never a choice to make.
+
+  **Trade-off.** Round-trip consistency inside a folded region gets *worse*, not better: on
+  the same fixture, exact round trips fell from 249/400 to 210/400. This is unavoidable. In a
+  folded region a target coordinate has several pre-images, and returning the
+  orientation-preserving one conflicts with returning the one the forward pass happened to
+  use. A stateless inverse cannot satisfy both. Regions without flipped triangles are wholly
+  unaffected — with no flipped triangles the lookup is bit-for-bit what it was.
+
+### Changed
+
+- `GeometryLib.georefTriangleForPoint` takes an optional sixth argument, `flippedIndices`.
+  Omitting it reproduces the previous behaviour exactly.
+
+---
+
 ## [0.1.5] — 2026-08-21
 
 ### Added

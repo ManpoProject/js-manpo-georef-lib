@@ -904,12 +904,24 @@ export class GeometryLib {
    * @param {number[][]} centroids centroids of triangles
    * @param {number[]} p the point to be transformed
    * @param {Crs} crs the coordinate system of the points
+   * @param {Set<number>|null} [flippedIndices=null] indices of triangles whose orientation is flipped.
+   *   When several triangles contain `p` — possible when searching the folded image of a TIN, i.e. the
+   *   inverse direction — an unflipped one is preferred over a flipped one. Omit it (the default) to
+   *   accept whichever containing triangle is found first by centroid distance.
    * @returns {[number, boolean]} the index of the triangle to be used for transformation and the point is inside the triangle or not
    */
-  static georefTriangleForPoint (triangles, points, centroids, p, crs) {
+  static georefTriangleForPoint (triangles, points, centroids, p, crs, flippedIndices = null) {
     // Compute distances to all centroids once (O(N), unavoidable)
     const geo = crs === Crs.Geographic
     const distArr = centroids.map((c, i) => [i, geo ? this.geoDistance(p, c) : this.simpleDistance(p, c)])
+
+    const contains = i => {
+      const tri = triangles[i]
+      return this.isTriangleContainsPoint(points[tri[0]], points[tri[1]], points[tri[2]], p)
+    }
+    // With no flipped set supplied, nothing is ever "flipped" and the search
+    // below reduces exactly to nearest-centroid-first, first-match-wins.
+    const isFlipped = i => flippedIndices !== null && flippedIndices.has(i)
 
     // Fast path: find the nearest centroid with a linear scan (no sort)
     // then check only that triangle. For points inside the TIN this almost
@@ -918,23 +930,33 @@ export class GeometryLib {
     for (let i = 1; i < distArr.length; i++) {
       if (distArr[i][1] < nearestEntry[1]) nearestEntry = distArr[i]
     }
-    const nearestTri = triangles[nearestEntry[0]]
-    if (this.isTriangleContainsPoint(points[nearestTri[0]], points[nearestTri[1]], points[nearestTri[2]], p)) {
-      // console.log('Triangle index: ' + nearestEntry[0])
-      return [nearestEntry[0], true]
+
+    // A containing triangle whose orientation is flipped is only accepted once
+    // the search has established that no unflipped one contains the point too.
+    // Triangles cannot overlap in the space they were triangulated in, but the
+    // *image* of a TIN can fold over itself, and the inverse direction searches
+    // that image: there a point may sit in several triangles at once. Picking
+    // the first one by centroid distance would take a folded-over cell about
+    // half the time, so an orientation-preserving cell is preferred instead.
+    let flippedFallback = null
+    if (contains(nearestEntry[0])) {
+      if (!isFlipped(nearestEntry[0])) return [nearestEntry[0], true]
+      flippedFallback = nearestEntry[0]
     }
 
     // Fallback: sort and check remaining triangles in order of distance.
-    // Reached only for points near triangle boundaries or outside the hull.
+    // Reached for points near triangle boundaries, outside the hull, or when
+    // the nearest containing triangle was flipped and a better one may exist.
     distArr.sort((a, b) => a[1] - b[1])
     for (let i = 0; i < distArr.length; i++) {
-      if (distArr[i][0] === nearestEntry[0]) continue  // already checked above
-      const tri = triangles[distArr[i][0]]
-      if (this.isTriangleContainsPoint(points[tri[0]], points[tri[1]], points[tri[2]], p)) {
-        // console.log('Triangle index: ' + distArr[i][0])
-        return [distArr[i][0], true]
-      }
+      const idx = distArr[i][0]
+      if (idx === nearestEntry[0]) continue  // already checked above
+      if (!contains(idx)) continue
+      if (!isFlipped(idx)) return [idx, true]
+      if (flippedFallback === null) flippedFallback = idx
     }
+
+    if (flippedFallback !== null) return [flippedFallback, true]
     // console.log('No triangle includes the point')
     return [distArr[0][0], false]
   }
@@ -1529,7 +1551,9 @@ export class PointGeoreferencer {
       return null
     }
     return this._batchOrSingle(pt, extra, (p, e) => {
-      let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vertices, this.georefTIN2Centroids, p, this.crs2)
+      // The flipped set is supplied here (and not in the forward direction)
+      // because this search runs over the TIN's image, which can fold.
+      let [triIdx, inside] = GeometryLib.georefTriangleForPoint(this.georefTIN2Triangles, this.georefTIN2Vertices, this.georefTIN2Centroids, p, this.crs2, this.georefTIN2FlippedIndices)
       const params = this.tin2AffineParams[triIdx]
       if (params === undefined || params === null) {
         // exception: irregular triangle almost in the same line

@@ -217,6 +217,8 @@ if (extra.usedFallbackTPS) {
 }
 ```
 
+When the control points describe a fold, the **inverse** direction faces an extra ambiguity: the TIN's image overlaps itself, so a target coordinate can lie in several triangles and have several pre-images. The inverse lookup prefers a triangle whose orientation is preserved. Round trips through a folded region are still not guaranteed to return to the starting point — returning the orientation-preserving pre-image and returning the one the forward pass used are conflicting goals. Outside folded regions round trips are exact.
+
 Points inside the hull always keep the affine result, including inside a flipped triangle. An affine map preserves barycentric coordinates, so a point inside a source triangle always lands inside the corresponding target triangle — a flip changes the orientation, not that containment. A flip means the control points themselves describe a fold, and TPS interpolates those same control points, so it folds too; falling back there would give up the TIN's locality and exactness for nothing. Use `extra.orientationOutlier` to find and fix the offending correspondence instead.
 
 It works on a batch too, deciding per point:

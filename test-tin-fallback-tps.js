@@ -13,7 +13,7 @@
  * that contract, not an accuracy ranking.
  */
 
-import { PointGeoreferencer, Crs } from './index.js'
+import { PointGeoreferencer, Crs, GeometryLib } from './index.js'
 
 let passed = 0
 let failed = 0
@@ -460,6 +460,127 @@ group('6c', () => {
     extra.orientationOutlier === false, JSON.stringify(extra))
   assert('6c: so the point keeps its TIN result',
     extra.usedFallbackTPS === false, JSON.stringify(extra))
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. Inverse lookup prefers an unflipped triangle where the image folds
+// ─────────────────────────────────────────────────────────────────────────────
+
+section('inverse triangle lookup — folded image prefers unflipped cells')
+
+/** Collect every triangle of `tris` (indexed into `verts`) containing `p`. */
+function coveringTriangles (tris, verts, p) {
+  const hit = []
+  tris.forEach((t, i) => {
+    if (GeometryLib.isPointInTriangle(verts[t[0]], verts[t[1]], verts[t[2]], p)) hit.push(i)
+  })
+  return hit
+}
+
+// --- Test 7a: the fixture's image really does fold, so several triangles
+//     contain the same point and there is a genuine choice to make ---
+group('7a', () => {
+  const g = makeFlippedGeoreferencer()
+  g.georefInverseAffineWithTIN([0, 0], {})
+  const T = g.georefTIN2Triangles
+  const V = g.georefTIN2Vertices
+
+  let overlapping = 0
+  for (let x = -70; x <= 25; x += 1.5) {
+    for (let y = -70; y <= 25; y += 1.5) {
+      if (coveringTriangles(T, V, [x, y]).length > 1) overlapping++
+    }
+  }
+  assert('7a: the TIN image folds over itself', overlapping > 100, `overlapping probes = ${overlapping}`)
+})
+
+// --- Test 7b: wherever an unflipped triangle also contains the point, the
+//     lookup must return an unflipped one. Without the flipped set supplied
+//     it took a folded-over cell roughly half the time. ---
+group('7b', () => {
+  const g = makeFlippedGeoreferencer()
+  g.georefInverseAffineWithTIN([0, 0], {})
+  const T = g.georefTIN2Triangles
+  const V = g.georefTIN2Vertices
+  const C = g.georefTIN2Centroids
+  const F = g.georefTIN2FlippedIndices
+
+  let decidable = 0
+  let flippedWithoutSet = 0
+  let flippedWithSet = 0
+  for (let x = -70; x <= 25; x += 1.5) {
+    for (let y = -70; y <= 25; y += 1.5) {
+      const p = [x, y]
+      const cover = coveringTriangles(T, V, p)
+      // Only points where an unflipped alternative genuinely exists.
+      if (cover.length < 2 || !cover.some(i => !F.has(i))) continue
+      decidable++
+      const [without] = GeometryLib.georefTriangleForPoint(T, V, C, p, Crs.Simple)
+      const [wit] = GeometryLib.georefTriangleForPoint(T, V, C, p, Crs.Simple, F)
+      if (F.has(without)) flippedWithoutSet++
+      if (F.has(wit)) flippedWithSet++
+    }
+  }
+
+  assert('7b: the sweep found points with a real choice', decidable > 100, `decidable = ${decidable}`)
+  assert('7b: without the flipped set, flipped cells are picked (old behaviour)',
+    flippedWithoutSet > 0, `${flippedWithoutSet}/${decidable}`)
+  assert('7b: with the flipped set, a flipped cell is never picked',
+    flippedWithSet === 0, `${flippedWithSet}/${decidable} still flipped`)
+})
+
+// --- Test 7c: the inverse transform actually passes the flipped set through ---
+group('7c', () => {
+  const g = makeFlippedGeoreferencer()
+  g.georefInverseAffineWithTIN([0, 0], {})
+  const T = g.georefTIN2Triangles
+  const V = g.georefTIN2Vertices
+  const F = g.georefTIN2FlippedIndices
+
+  let checked = 0
+  let flippedUsed = 0
+  for (let x = -70; x <= 25; x += 3) {
+    for (let y = -70; y <= 25; y += 3) {
+      const p = [x, y]
+      const cover = coveringTriangles(T, V, p)
+      if (cover.length < 2 || !cover.some(i => !F.has(i))) continue
+      const extra = {}
+      g.georefInverseAffineWithTIN(p, extra, false)
+      if (extra.inside !== true) continue
+      checked++
+      // flippedTriangle is reported for whichever triangle the lookup chose,
+      // so it doubles as a witness that an unflipped cell was taken.
+      if (extra.flippedTriangle === true) flippedUsed++
+    }
+  }
+  assert('7c: the sweep exercised the inverse transform', checked > 20, `checked = ${checked}`)
+  assert('7c: no inverse result came from a flipped triangle where a clean one existed',
+    flippedUsed === 0, `${flippedUsed}/${checked}`)
+})
+
+// --- Test 7d: backward compatibility — with no flipped triangles at all, or
+//     with no set supplied, the lookup behaves exactly as it did before ---
+group('7d', () => {
+  const g = makePixelGeoreferencer()
+  g.georefInverseAffineWithTIN([500, 800], {})
+  const T = g.georefTIN2Triangles
+  const V = g.georefTIN2Vertices
+  const C = g.georefTIN2Centroids
+  const F = g.georefTIN2OrientationOutliers
+
+  let same = 0
+  let total = 0
+  for (let x = 250; x < 1600; x += 90) {
+    for (let y = 300; y < 1550; y += 90) {
+      const p = [x, y]
+      const a = GeometryLib.georefTriangleForPoint(T, V, C, p, Crs.Simple)
+      const b = GeometryLib.georefTriangleForPoint(T, V, C, p, Crs.Simple, F)
+      total++
+      if (a[0] === b[0] && a[1] === b[1]) same++
+    }
+  }
+  assert('7d: a normal geo→pixel TIN has no orientation outliers', F.size === 0, `${F.size}`)
+  assert('7d: passing the set changes nothing there', same === total, `${same}/${total}`)
 })
 
 console.log('\n══════════════════════════════════════════════════')

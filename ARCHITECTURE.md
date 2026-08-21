@@ -51,7 +51,15 @@ Because raster maps often contain inherent linear distortions and curves, re-cal
 
 To guarantee perfect mathematical round-trip consistency:
 The library does **not** rely on `delaunator` for inverse coordinate arrays.
-Instead, it constructs the Inverse TIN explicitly copying the vertex triangle index arrays of the Forward TIN mapping. Thus, if control point indices `[2, 7, 10]` formed the structural skeleton mapping coordinate X to Y, those exact same anchors seamlessly revert Y back to X. 
+Instead, it constructs the Inverse TIN explicitly copying the vertex triangle index arrays of the Forward TIN mapping. Thus, if control point indices `[2, 7, 10]` formed the structural skeleton mapping coordinate X to Y, those exact same anchors seamlessly revert Y back to X.
+
+### Overlap in the Inverse Direction
+
+Shared topology makes the two directions agree on *which* triangles exist, but it cannot make the inverse lookup unambiguous. A Delaunay tessellation does not overlap in the space it was built from, so a forward query lands in exactly one triangle. The inverse query searches the TIN's *image*, and that image folds wherever the control points describe a fold — there a single target coordinate lies inside several triangles at once and has several pre-images.
+
+Faced with that choice the library prefers a triangle whose orientation is preserved, accepting a flipped one only once the search has confirmed that no unflipped triangle contains the point. An orientation-preserving cell is the more defensible reading of an ambiguous inverse.
+
+This does not rescue round-trip consistency inside a fold, and cannot: returning the orientation-preserving pre-image conflicts with returning the one the forward pass used, and a stateless inverse cannot honour both. A fold is a defect in the control points, and the only real repair is to fix the correspondence that caused it — which `extra.orientationOutlier` is there to locate. Outside folded regions round trips remain exact. 
 
 ---
 
