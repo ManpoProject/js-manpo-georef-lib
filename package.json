@@ -1,6 +1,6 @@
 {
   "name": "manpo-georeflib",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "JavaScript Library for the georeferencing functions",
   "main": "index.js",
   "module": "index.js",
@@ -41,8 +41,7 @@
     "enumify": "^2.0.0",
     "geographiclib-geodesic": "^2.1.1",
     "lodash": "^4.17.21",
-    "mathjs": "^14.6.0",
-    "uuid": "^11.1.0"
+    "mathjs": "^15.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",

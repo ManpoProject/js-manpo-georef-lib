@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.7] — 2026-09-10
+
+### Security
+
+- **All 11 reported vulnerabilities resolved** (`npm audit`: 0 remaining). Of these, only
+  `mathjs` was actually reachable by consumers — it is a runtime dependency and is bundled
+  into `dist/bundle.js`. The rest were build-time only.
+
+  | Package | Before | After | Reached consumers? |
+  |---------|--------|-------|--------------------|
+  | mathjs | 14.6.0 | 15.2.0 | yes — bundled |
+  | lodash | 4.17.21 | 4.18.1 | yes, but unaffected: the advisories cover `_.template`, `_.unset` and `_.omit`, and only `lodash/sum.js` is imported |
+  | browserslist | 4.25.2 | 4.28.9 | no — devDependency of webpack and babel |
+  | webpack | 5.101.1 | 5.110.3 | no |
+  | ajv | 8.17.1 | 8.20.0 | no |
+  | fast-uri | 3.0.6 | 3.1.7 | no |
+
+  `serialize-javascript` and `terser-webpack-plugin`, both flagged, left the dependency tree
+  entirely with the webpack upgrade.
+
+### Changed
+
+- **mathjs upgraded across a major version (14 → 15).** Only `transpose`, `multiply`, `lup`
+  and `lusolve` are used, and none changed. Verified before merging by capturing the output of
+  every transform family — TPS, TIN, TIN-with-TPS-fallback, polynomial orders 1–3, and the two
+  inverse directions — against the sample control points on both versions: the results are
+  **byte-for-byte identical**, so no numerical drift was introduced.
+
+- `dist/bundle.js` shrank from 303,281 to 292,381 bytes as a result of the upgrades.
+
+### Removed
+
+- **`uuid` dropped from dependencies.** It was never imported anywhere in the library. Removing
+  it also cleared one of the reported advisories.
+
+---
+
 ## [0.1.6] — 2026-08-21
 
 ### Fixed
